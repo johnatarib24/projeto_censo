@@ -1,3 +1,4 @@
+dados/bronze/*
 dados/prata/*
 dados/ouro/*
 !dados/**/.gitkeep

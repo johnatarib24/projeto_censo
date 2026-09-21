@@ -1,35 +1,67 @@
-from pathlib import Path
-from datetime import date, datetime
-import json
-import zipfile
+"""
+Ingestao da fonte primaria: IDEB - Anos Iniciais - Escolas 2025 (INEP)
 
-import requests
+Baixa o zip do link direto, extrai para a camada bronze (sem alterar o
+conteudo) e registra a proveniencia. Rode com:
+    python src/ingerir_ideb.py
+
+O download usa o curl instalado no sistema (via subprocess) em vez do
+pacote requests: o servidor do INEP falha o handshake TLS especificamente
+com a stack OpenSSL do Python, mas funciona normalmente com o schannel
+(TLS nativo do Windows) que o curl usa. E automatico do mesmo jeito, so
+que delegando a parte de rede pra uma ferramenta que essa fonte aceita.
+"""
+import json
+import shutil
+import subprocess
+import zipfile
+from datetime import date, datetime
+from pathlib import Path
 
 URL = "https://download.inep.gov.br/ideb/resultados/divulgacao_anos_iniciais_escolas_2025.zip"
 BRONZE = Path("dados/bronze/ideb_anos_iniciais_escolas")
 
 
 def baixar():
-    """Baixa o zip da fonte em stream (arquivo grande) para um temporario."""
+    """Baixa o zip da fonte usando o curl do sistema."""
+    if shutil.which("curl") is None:
+        raise RuntimeError(
+            "curl nao encontrado no PATH. Instale o curl ou baixe o "
+            f"arquivo manualmente em {URL}."
+        )
+
     BRONZE.mkdir(parents=True, exist_ok=True)
     destino_zip = BRONZE / "_download_temp.zip"
-    with requests.get(URL, stream=True, timeout=120) as r:
-        r.raise_for_status()
-        with destino_zip.open("wb") as f:
-            for chunk in r.iter_content(chunk_size=8192):
-                f.write(chunk)
+
+    print("Baixando arquivo do IDEB (via curl)...")
+    subprocess.run(
+        [
+            "curl", "-sS", "-L", "--fail",
+            "--connect-timeout", "30",
+            "--retry", "8",
+            "--retry-delay", "5",
+            "--retry-all-errors",
+            "--retry-max-time", "600",
+            "-C", "-",
+            URL, "-o", str(destino_zip),
+        ],
+        check=True,
+    )
+
     print("baixado em:", destino_zip)
     return destino_zip
 
 
 def extrair(zip_path):
     """Extrai o zip para uma pasta datada dentro da bronze e apaga o zip."""
-    hoje = date.today().strftime("%Y%m%d")
+    hoje = date.today().strftime("%d%m%Y")
     pasta_destino = BRONZE / hoje
     pasta_destino.mkdir(parents=True, exist_ok=True)
+
     with zipfile.ZipFile(zip_path) as z:
         arquivos = z.namelist()
         z.extractall(pasta_destino)
+
     zip_path.unlink()
     print("extraidos:", len(arquivos), "arquivo(s) em", pasta_destino)
     return pasta_destino, arquivos
@@ -44,9 +76,11 @@ def registrar(pasta_destino, arquivos):
         "arquivos": arquivos,
         "extraido_em": datetime.now().isoformat(),
     }
+
     caminho = BRONZE / "proveniencia.jsonl"
-    with caminho.open("a", encoding="utf-8") as f:
-        f.write(json.dumps(info, ensure_ascii=False) + "\n")
+    with caminho.open("a", encoding="utf-8") as arquivo:
+        arquivo.write(json.dumps(info, ensure_ascii=False) + "\n")
+
     print("proveniencia registrada em:", caminho)
 
 
