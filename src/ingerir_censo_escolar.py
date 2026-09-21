@@ -2,15 +2,16 @@
 Ingestao da fonte secundaria: Microdados do Censo Escolar 2025 (INEP)
 
 Baixa o zip do link direto, extrai para a camada bronze (sem alterar o
-conteudo) e registra a proveniencia. Este arquivo e grande (varios GB de
-zip), entao o download pode demorar bastante. Rode com:
+conteudo) e registra a proveniencia.
+
+NOTA(para eu não esquecer): para rodar a ingestao usar o comando:
+
     python src/ingerir_censo_escolar.py
 
 O download usa o curl instalado no sistema (via subprocess) em vez do
 pacote requests: o servidor do INEP falha o handshake TLS especificamente
 com a stack OpenSSL do Python, mas funciona normalmente com o schannel
-(TLS nativo do Windows) que o curl usa. E automatico do mesmo jeito, so
-que delegando a parte de rede pra uma ferramenta que essa fonte aceita.
+(TLS nativo do Windows) que o curl usa.
 """
 import json
 import os
@@ -39,7 +40,6 @@ def _caminho_estendido(caminho: Path) -> Path:
 
 
 def baixar():
-    """Baixa o zip da fonte usando o curl do sistema."""
     if shutil.which("curl") is None:
         raise RuntimeError(
             "curl nao encontrado no PATH. Instale o curl ou baixe o "
@@ -69,7 +69,6 @@ def baixar():
 
 
 def extrair(zip_path):
-    """Extrai o zip para uma pasta datada dentro da bronze e apaga o zip."""
     hoje = date.today().strftime("%d%m%Y")
     pasta_destino = BRONZE / hoje
     pasta_destino.mkdir(parents=True, exist_ok=True)
@@ -84,7 +83,6 @@ def extrair(zip_path):
 
 
 def registrar(pasta_destino, arquivos):
-    """Registra a proveniencia (append, nunca sobrescreve)."""
     info = {
         "fonte": URL,
         "pasta_bronze": str(pasta_destino),
