@@ -5,16 +5,16 @@ Camada prata do Censo Escolar 2025 (Tabela_Escola).
 
 Le a extracao mais recente da bronze, aplica as decisoes de tratamento e grava
 dados/prata/censo_escolas.parquet. A bronze nunca e alterada.
+Rode a partir da raiz do projeto (o import de limpeza depende disso).
 """
-import json
-from datetime import datetime
 from pathlib import Path
 
 import pandas as pd
 
+import limpeza
+
 BRONZE = Path("dados/bronze/microdados_censo_escolar")
 PRATA = Path("dados/prata")
-FORMATO_PASTA = "%d%m%Y"
 PADRAO = "Tabela_Escola_2025_V2*.csv"
 
 # O que e uma linha? Uma escola. CO_ENTIDADE e o codigo unico dela.
@@ -24,31 +24,56 @@ CHAVE = ["CO_ENTIDADE"]
 COLUNAS_ID = ["CO_ENTIDADE", "CO_MUNICIPIO", "CO_UF"]
 TAMANHO_CO_MUNICIPIO = 7
 
-# Codigos de "sem resposta" do Censo (conferir no dicionario de dados do INEP)
+# Codigos especiais do Censo (dicionario de dados do INEP):
+#  9     = "Nao informado" (definido em 10 das 16 colunas IN_* que o trazem;
+#          nas 6 IN_EDUC_AMB_* o 9 aparece mas o dicionario nao o define)
+#  88888 = "registro com marcacao de valor extremo" nas colunas QT_*
 CODIGO_IN_SEM_RESPOSTA = 9
-CODIGO_QT_SEM_INFORMACAO = 88888
+CODIGO_QT_EXTREMO_INEP = 88888
 
 # Colunas com contagem em que vale marcar extremos. QT_DESKTOP_ALUNO ficou
 # de fora: 75% das escolas tem 0 ou poucos, o IQR marcaria 15% como extremo.
 COLUNAS_EXTREMOS = ["QT_SALAS_UTILIZADAS"]
 
+# Categorias (rotulos do dicionario de dados do INEP), sem ordem natural
+CATEGORIAS_TP = {
+    "TP_DEPENDENCIA": {1: "federal", 2: "estadual", 3: "municipal", 4: "privada"},
+    "TP_SITUACAO_FUNCIONAMENTO": {
+        1: "em atividade", 2: "paralisada",
+        3: "extinta (ano do censo)", 4: "extinta em anos anteriores",
+    },
+    "TP_LOCALIZACAO": {1: "urbana", 2: "rural"},
+}
 
-def mais_recente(bronze: Path) -> Path:
-    candidatas = []
-    for p in bronze.iterdir():
-        if not p.is_dir():
-            continue
-        try:
-            candidatas.append((datetime.strptime(p.name, FORMATO_PASTA), p))
-        except ValueError:
-            continue
-    if not candidatas:
-        raise FileNotFoundError(f"nenhuma pasta datada em {bronze}")
-    return max(candidatas, key=lambda item: item[0])[1]
+# Atributo derivado: indice de infraestrutura (ver README). Cada item e uma
+# coluna IN_* (0/1). Escolhidos para nao repetir informacao: ficam de fora as
+# colunas "..._INEXISTENTE" (inverso de outras), os subconjuntos (quadra
+# coberta/descoberta, biblioteca x sala de leitura) e o que nao se aplica aos
+# anos iniciais (educacao profissional, dormitorios).
+GRUPOS_INFRA = {
+    "infra_basica": [
+        "IN_AGUA_POTAVEL", "IN_ENERGIA_REDE_PUBLICA", "IN_ESGOTO_REDE_PUBLICA",
+        "IN_BANHEIRO", "IN_COZINHA", "IN_REFEITORIO",
+    ],
+    "infra_espacos_ensino": [
+        "IN_BIBLIOTECA_SALA_LEITURA", "IN_LABORATORIO_CIENCIAS",
+        "IN_LABORATORIO_INFORMATICA", "IN_QUADRA_ESPORTES", "IN_PARQUE_INFANTIL",
+        "IN_SALA_ATENDIMENTO_ESPECIAL", "IN_SALA_PROFESSOR",
+    ],
+    "infra_acessibilidade": [
+        "IN_ACESSIBILIDADE_RAMPAS", "IN_BANHEIRO_PNE", "IN_ACESSIBILIDADE_CORRIMAO",
+        "IN_ACESSIBILIDADE_VAO_LIVRE", "IN_ACESSIBILIDADE_PISOS_TATEIS",
+    ],
+    "infra_tecnologia": [
+        "IN_INTERNET_ALUNOS", "IN_BANDA_LARGA", "IN_DESKTOP_ALUNO",
+        "IN_COMP_PORTATIL_ALUNO", "IN_TABLET_ALUNO", "IN_EQUIP_MULTIMIDIA",
+        "IN_EQUIP_LOUSA_DIGITAL",
+    ],
+}
 
 
 def carregar():
-    pasta = mais_recente(BRONZE)
+    pasta = limpeza.mais_recente(BRONZE)
     encontrados = sorted(pasta.rglob(PADRAO))
     if not encontrados:
         raise FileNotFoundError(f"nenhum '{PADRAO}' em {pasta}")
@@ -62,28 +87,12 @@ def carregar():
     return df, caminho
 
 
-def tirar_espacos(df):
-    df.columns = df.columns.str.strip()
-    for coluna in df.select_dtypes(include=["object", "string"]):
-        df[coluna] = df[coluna].str.strip()
-    return df
-
-
 def padronizar_codigo_municipio(df):
     """Mesmo formato do id_municipio do IDEB: 7 digitos, texto."""
     df["CO_MUNICIPIO"] = df["CO_MUNICIPIO"].str.zfill(TAMANHO_CO_MUNICIPIO)
     fora = int((df["CO_MUNICIPIO"].str.len() != TAMANHO_CO_MUNICIPIO).sum())
     print(f"CO_MUNICIPIO com tamanho diferente de {TAMANHO_CO_MUNICIPIO}:", fora)
     return df
-
-
-def conferir_chave(df, chave=CHAVE):
-    repetidas = int(df.duplicated(subset=chave).sum())
-    print("chaves repetidas:", repetidas)
-    if repetidas:
-        print(df[df.duplicated(subset=chave, keep=False)]
-              .sort_values(chave).head(20)[chave + ["NO_ENTIDADE"]])
-    return df.drop_duplicates(subset=chave).copy(), repetidas
 
 
 def tipar_indicadores(df):
@@ -107,20 +116,27 @@ def tipar_indicadores(df):
 
 
 def tratar_sentinela_qt(df):
-    """Colunas QT_* usam 88888 como codigo de 'nao informado'. Se ficar,
-    vira contagem gigante e destroi media, IQR e z-score."""
+    """Nas colunas QT_*, o INEP grava 88888 no lugar de valores que ele mesmo
+    marcou como extremos (acima de um limite de plausibilidade). O valor real
+    nao esta no arquivo, entao vira ausente; a escola fica marcada em
+    qt_extremo_inep para nao perder a informacao."""
     colunas = [c for c in df.columns if c.startswith("QT_")]
+    marcada = pd.Series(False, index=df.index)
     afetadas, total = 0, 0
     for coluna in colunas:
         df[coluna] = pd.to_numeric(df[coluna], errors="coerce")
-        n = int((df[coluna] == CODIGO_QT_SEM_INFORMACAO).sum())
-        if n:
-            df[coluna] = df[coluna].mask(df[coluna] == CODIGO_QT_SEM_INFORMACAO)
+        alvo = df[coluna] == CODIGO_QT_EXTREMO_INEP
+
+        if n:= int(alvo.sum()):
+            df[coluna] = df[coluna].mask(alvo)
+            marcada |= alvo
             afetadas += 1
             total += n
-    print(f"QT_*: {total} valores {CODIGO_QT_SEM_INFORMACAO} -> ausente "
-          f"em {afetadas} de {len(colunas)} colunas")
-    return df, afetadas, total
+    df["qt_extremo_inep"] = marcada
+    print(f"QT_*: {total} valores {CODIGO_QT_EXTREMO_INEP} -> ausente em "
+          f"{afetadas} de {len(colunas)} colunas; "
+          f"{int(marcada.sum())} escolas marcadas em qt_extremo_inep")
+    return df, afetadas, total, int(marcada.sum())
 
 
 def remover_coluna_constante(df, coluna="NU_ANO_CENSO", valor=2025):
@@ -135,24 +151,36 @@ def remover_coluna_constante(df, coluna="NU_ANO_CENSO", valor=2025):
     return df, False
 
 
-def limites_iqr(serie):
-    q1, q3 = serie.quantile(0.25), serie.quantile(0.75)
-    iqr = q3 - q1
-    return q1 - 1.5 * iqr, q3 + 1.5 * iqr
+def tipar_categorias(df):
+    """Codigos TP_* viram categoria com o rotulo do dicionario do INEP.
+    Valor fora do dicionario vira ausente, contado."""
+    total_fora = 0
+    for coluna, mapa in CATEGORIAS_TP.items():
+        df, fora = limpeza.tipar_categoria(
+            df, coluna, list(mapa.values()), mapa=mapa)
+        total_fora += fora
+    return df, total_fora
 
 
-def marcar_extremos(df, coluna):
-    """Se o IQR for zero (coluna concentrada em um valor), todo valor
-    diferente viraria 'extremo': nesse caso nao se marca."""
-    serie = pd.to_numeric(df[coluna], errors="coerce")
-    baixo, alto = limites_iqr(serie.dropna())
-    if alto == baixo:
-        print(f"{coluna}: IQR = 0, extremos nao marcados")
-        return df, None
-    df[coluna + "_extremo"] = (serie < baixo) | (serie > alto)
-    n = int(df[coluna + "_extremo"].sum())
-    print(f"{coluna}: IQR marcou {n} (limites {baixo:.2f} a {alto:.2f})")
-    return df, n
+def derivar_infraestrutura(df):
+    """indice_infraestrutura: fracao (0 a 1) dos itens de infraestrutura que a
+    escola tem. Serve para comparar escolas de tamanhos e tipos diferentes com
+    uma unica medida de estrutura, que e o que a pergunta norteadora relaciona
+    ao IDEB. As quatro infra_* dao a mesma fracao por bloco."""
+    todas = [c for cols in GRUPOS_INFRA.values() for c in cols]
+    assert len(todas) == len(set(todas)), "item repetido entre blocos"
+    for bloco, colunas in GRUPOS_INFRA.items():
+        df[bloco] = limpeza.proporcao_presente(df, colunas)
+    df["indice_infraestrutura"] = limpeza.proporcao_presente(df, todas)
+    ativas = df["TP_SITUACAO_FUNCIONAMENTO"] == "em atividade"
+    print(f"indice_infraestrutura: {len(todas)} itens em {len(GRUPOS_INFRA)} blocos")
+    print("  escolas em atividade sem indice (ausente):",
+          int(df.loc[ativas, "indice_infraestrutura"].isna().sum()))
+    print("  sem indice fora de atividade:",
+          int(df.loc[~ativas, "indice_infraestrutura"].isna().sum()),
+          "de", int((~ativas).sum()))
+    print(df.loc[ativas, "indice_infraestrutura"].describe().round(3).to_string())
+    return df, len(todas)
 
 
 def salvar(df):
@@ -163,30 +191,15 @@ def salvar(df):
     return destino
 
 
-def registrar(origem, destino, antes, depois, decisoes):
-    info = {
-        "origem": origem.name,
-        "arquivo_prata": destino.name,
-        "linhas_antes": antes,
-        "linhas_depois": depois,
-        "decisoes": decisoes,
-        "transformado_em": datetime.now().isoformat(timespec="seconds"),
-    }
-    caminho = PRATA / "proveniencia.jsonl"
-    with caminho.open("a", encoding="utf-8") as f:
-        f.write(json.dumps(info, ensure_ascii=False) + "\n")
-    print("proveniencia registrada em:", caminho)
-
-
 def main():
     df, origem = carregar()
     antes = len(df)
 
-    df = tirar_espacos(df)
+    df = limpeza.tirar_espacos(df)
     df = padronizar_codigo_municipio(df)
-    df, repetidas = conferir_chave(df)
+    df, repetidas = limpeza.conferir_chave(df, CHAVE, mostrar=["NO_ENTIDADE"])
     df, n_indicadores, n_nove, n_outros = tipar_indicadores(df)
-    df, qt_afetadas, qt_sentinelas = tratar_sentinela_qt(df)
+    df, qt_afetadas, qt_sentinelas, qt_escolas = tratar_sentinela_qt(df)
     df, removeu_ano = remover_coluna_constante(df)
 
     decisoes = [
@@ -195,9 +208,10 @@ def main():
         "CO_MUNICIPIO com 7 digitos",
         f"chave {CHAVE}: {repetidas} repeticoes removidas",
         f"{n_indicadores} colunas IN_* convertidas para Int8; codigo 9 "
-        f"(sem resposta) virou ausente: {n_nove}; outros fora de 0/1: {n_outros}",
-        f"QT_*: codigo {CODIGO_QT_SEM_INFORMACAO} (nao informado) virou ausente: "
-        f"{qt_sentinelas} valores em {qt_afetadas} colunas",
+        f"(nao informado) virou ausente: {n_nove}; outros fora de 0/1: {n_outros}",
+        f"QT_*: codigo {CODIGO_QT_EXTREMO_INEP} (extremo marcado pelo INEP) virou "
+        f"ausente: {qt_sentinelas} valores em {qt_afetadas} colunas; "
+        f"{qt_escolas} escolas marcadas em qt_extremo_inep",
         "ausentes de colunas condicionais mantidos (nao se aplica, nao e erro)",
     ]
     if removeu_ano:
@@ -207,12 +221,29 @@ def main():
         if coluna not in df.columns:
             print("aviso: coluna nao encontrada:", coluna)
             continue
-        df, n = marcar_extremos(df, coluna)
-        if n is not None:
-            decisoes.append(f"{coluna}: {n} extremos marcados por IQR, mantidos")
+        df, n_iqr, _ = limpeza.marcar_extremos(df, coluna)
+        if n_iqr is not None:
+            decisoes.append(f"{coluna}: {n_iqr} extremos marcados por IQR, mantidos")
+
+    # --- aula 6: tipos e atributos derivados
+    df, fora_tp = tipar_categorias(df)
+    decisoes.append(
+        f"{list(CATEGORIAS_TP)} tipadas como categoria com rotulos do dicionario "
+        f"do INEP ({fora_tp} valores fora do dicionario viraram ausentes)")
+
+    df, n_itens = derivar_infraestrutura(df)
+    decisoes.append(
+        f"atributo derivado indice_infraestrutura: fracao de {n_itens} itens "
+        f"IN_* presentes, em {len(GRUPOS_INFRA)} blocos ({list(GRUPOS_INFRA)})")
 
     destino = salvar(df)
-    registrar(origem, destino, antes, len(df), decisoes)
+    limpeza.registrar(PRATA, {
+        "origem": origem.name,
+        "arquivo_prata": destino.name,
+        "linhas_antes": antes,
+        "linhas_depois": len(df),
+        "decisoes": decisoes,
+    })
 
 
 if __name__ == "__main__":
