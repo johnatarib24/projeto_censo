@@ -1,5 +1,6 @@
 pandas
 requests
+openpyxl
+basedosdados
 fg-data-profiling
 setuptools<82
-openpyxl

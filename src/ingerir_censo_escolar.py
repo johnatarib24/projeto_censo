@@ -1,17 +1,8 @@
 """
-Ingestao da fonte secundaria: Microdados do Censo Escolar 2025 (INEP)
-
-Baixa o zip do link direto, extrai para a camada bronze (sem alterar o
-conteudo) e registra a proveniencia.
-
 NOTA(para eu não esquecer): para rodar a ingestao usar o comando:
 
     python src/ingerir_censo_escolar.py
-
-O download usa o curl instalado no sistema (via subprocess) em vez do
-pacote requests: o servidor do INEP falha o handshake TLS especificamente
-com a stack OpenSSL do Python, mas funciona normalmente com o schannel
-(TLS nativo do Windows) que o curl usa.
+.
 """
 import json
 import os
@@ -26,11 +17,7 @@ BRONZE = Path("dados/bronze/microdados_censo_escolar")
 
 
 def _caminho_estendido(caminho: Path) -> Path:
-    """No Windows, caminhos com mais de 260 caracteres quebram a extracao
-    (alguns nomes de arquivo do Censo Escolar sao bem longos, e o
-    OneDrive ja adiciona varias pastas antes do projeto). O prefixo \\?\
-    pede ao Windows para usar o modo de caminho estendido, que nao tem
-    esse limite."""
+
     if os.name == "nt":
         caminho = caminho.resolve()
         texto = str(caminho)
