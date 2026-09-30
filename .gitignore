@@ -5,3 +5,4 @@ dados/ouro/*
 .venv/
 __pycache__/
 relatorios/
+!dados/prata/proveniencia.jsonl
