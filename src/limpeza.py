@@ -58,8 +58,8 @@ def tipar_categoria(df, coluna, categorias, nova=None, ordenada=False, mapa=None
     """Declara a coluna como categoria. `categorias` e a lista de valores
     validos (na ordem da escala, se `ordenada`). `mapa` traduz codigos em
     rotulos antes. O que ficar fora da lista vira ausente e e contado."""
+    antes = int(df[coluna].isna().sum())  # ausentes que ja existiam, antes do mapa
     origem = df[coluna].map(mapa) if mapa else df[coluna]
-    antes = int(origem.isna().sum())
     tipada = pd.Categorical(origem, categories=list(categorias), ordered=ordenada)
     fora = int(pd.isna(tipada).sum()) - antes
     df[nova or coluna] = tipada
@@ -119,8 +119,8 @@ def proporcao_presente(df, colunas):
     """Fracao (0 a 1) das colunas 0/1 que valem 1, por linha. Ausente nao
     conta nem a favor nem contra; se todas forem ausentes, o resultado e
     ausente. Exige que todas as colunas existam."""
-    faltando = [c for c in colunas if c not in df.columns]
-    if faltando:
+
+    if faltando:= [c for c in colunas if c not in df.columns]:
         raise KeyError(f"colunas inexistentes: {faltando}")
     return df[list(colunas)].astype("float64").mean(axis=1)
 
