@@ -1,8 +1,5 @@
 """
-NOTA(para eu não esquecer): para rodar a ingestao usar o comando:
-
     python src/ingerir_censo_escolar.py
-.
 """
 import json
 import os

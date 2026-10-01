@@ -37,7 +37,7 @@ COLUNAS_EXTREMOS = ["ideb", "taxa_aprovacao"]
 
 CATEGORIAS_REDE = ["federal", "estadual", "municipal"]
 
-def carregar():
+def carregar():                                                         #carrega o csv mais recente da pasta
     pasta = limpeza.mais_recente(BRONZE)
     arquivos = sorted(pasta.glob("*.csv"))
     if not arquivos:
@@ -50,7 +50,7 @@ def carregar():
     return df, caminho
 
 
-def filtrar_recorte(df):
+def filtrar_recorte(df):                                               #Filtrando a base para só conter o ano 2025 e os anos iniciais
     antes = len(df)
     mascara = (df["ano"] == ANO) & (df["anos_escolares"] == ANOS_ESCOLARES)
     if not mascara.any():
@@ -61,8 +61,8 @@ def filtrar_recorte(df):
     return df[mascara].copy(), antes - int(mascara.sum())
 
 
-def converter_tipos(df):
-    total_novos_ausentes = 0
+def converter_tipos(df):                                               #Garante que numeros sejam numeros e conta quantos valores
+    total_novos_ausentes = 0                                           #perderam o conteudo na conversão
     for coluna in NUMERICAS:
         if coluna not in df.columns:
             print("aviso: coluna ausente:", coluna)
@@ -75,16 +75,14 @@ def converter_tipos(df):
     return df, total_novos_ausentes
 
 
-def sinalizar_ausentes(df):
-    """Ausente de ideb = escola sem resultado calculado (sigilo estatistico).
-    Nao se remove: sinaliza, porque o vazio tem significado."""
-    df["ideb_disponivel"] = df["ideb"].notna()
+def sinalizar_ausentes(df):                                            #Cria a coluna booleana ideb_disponivel: True quando a escola 
+    df["ideb_disponivel"] = df["ideb"].notna()                         #tem IDEB calculado.
     print("escolas com IDEB:", int(df["ideb_disponivel"].sum()),
           "| sem IDEB:", int((~df["ideb_disponivel"]).sum()))
     return df
 
 
-def salvar(df):
+def salvar(df):                                                        #cria o parquet e salva na prata
     PRATA.mkdir(parents=True, exist_ok=True)
     destino = PRATA / "ideb_escolas.parquet"
     df.to_parquet(destino, index=False)
@@ -122,7 +120,6 @@ def main():
     df = sinalizar_ausentes(df)
     decisoes.append("ausentes de ideb mantidos e sinalizados em ideb_disponivel")
 
-    # --- aula 6: tipos
     df, fora_rede = limpeza.tipar_categoria(df, "rede", CATEGORIAS_REDE)
     decisoes.append(f"rede tipada como categoria {CATEGORIAS_REDE}: "
                     f"{fora_rede} valores fora da lista viraram ausentes")

@@ -54,7 +54,7 @@ GRUPOS_INFRA = {
 }
 
 
-def carregar():
+def carregar():                                        #Acha Tabela_Escola_2025_V2*.csv na extração mais recente da Bronze e o lê.
     pasta = limpeza.mais_recente(BRONZE)
     encontrados = sorted(pasta.rglob(PADRAO))
     if not encontrados:
@@ -69,20 +69,17 @@ def carregar():
     return df, caminho
 
 
-def padronizar_codigo_municipio(df):
-    """Mesmo formato do id_municipio do IDEB: 7 digitos, texto."""
+def padronizar_codigo_municipio(df):                       #Garante que CO_MUNICIPIO tenha 7 dígitos, igual ao id_municipio do IDEB
+
     df["CO_MUNICIPIO"] = df["CO_MUNICIPIO"].str.zfill(TAMANHO_CO_MUNICIPIO)
     fora = int((df["CO_MUNICIPIO"].str.len() != TAMANHO_CO_MUNICIPIO).sum())
     print(f"CO_MUNICIPIO com tamanho diferente de {TAMANHO_CO_MUNICIPIO}:", fora)
     return df
 
 
-def tipar_indicadores(df):
-    """Colunas IN_* sao 0/1. O valor 9 e codigo de 'sem resposta' (nao e
-    'sim' nem 'nao'), entao vira ausente. Qualquer outro valor fora de 0/1
-    tambem vira ausente, contado. Int8 aceita ausente sem virar zero."""
-    colunas = [c for c in df.columns if c.startswith("IN_")]
-    n_nove = 0
+def tipar_indicadores(df):                                          #Converte as 213 colunas IN_* (0 = não, 1 = sim) para o tipo 
+    colunas = [c for c in df.columns if c.startswith("IN_")]        #Int8, tratando o código 9 e qualquer valor inesperado como 
+    n_nove = 0                                                      #ausente.
     n_outros = 0
     for coluna in colunas:
         df[coluna] = pd.to_numeric(df[coluna], errors="coerce")
@@ -97,13 +94,9 @@ def tipar_indicadores(df):
     return df, len(colunas), n_nove, n_outros
 
 
-def tratar_sentinela_qt(df):
-    """Nas colunas QT_*, o INEP grava 88888 no lugar de valores que ele mesmo
-    marcou como extremos. O valor real
-    nao esta no arquivo, entao vira ausente; a escola fica marcada em
-    qt_extremo_inep para nao perder a informacao."""
-    colunas = [c for c in df.columns if c.startswith("QT_")]
-    marcada = pd.Series(False, index=df.index)
+def tratar_sentinela_qt(df):                                        #Nas colunas QT_* (contagens), converte o 88888 em ausente e 
+    colunas = [c for c in df.columns if c.startswith("QT_")]        #marca em uma coluna única (qt_extremo_inep) quais escolas 
+    marcada = pd.Series(False, index=df.index)                      #tinham esse código.
     afetadas, total = 0, 0
     for coluna in colunas:
         df[coluna] = pd.to_numeric(df[coluna], errors="coerce")
@@ -121,9 +114,8 @@ def tratar_sentinela_qt(df):
     return df, afetadas, total, int(marcada.sum())
 
 
-def remover_coluna_constante(df, coluna="NU_ANO_CENSO", valor=2025):
-    """Confere antes de apagar: so sai se for constante e igual ao esperado."""
-    if coluna not in df.columns:
+def remover_coluna_constante(df, coluna="NU_ANO_CENSO", valor=2025):    #Remove a coluna NU_ANO_CENSO, mas só depois de confirmar 
+    if coluna not in df.columns:                                        #que ela é constante e igual ao esperado
         return df, False
     unicos = df[coluna].dropna().unique()
     if len(unicos) == 1 and int(unicos[0]) == valor:
@@ -133,25 +125,19 @@ def remover_coluna_constante(df, coluna="NU_ANO_CENSO", valor=2025):
     return df, False
 
 
-def tipar_categorias(df):
-    """Codigos TP_* viram categoria com o rotulo do dicionario do INEP.
-    Valor fora do dicionario vira ausente, contado."""
-    total_fora = 0
-    for coluna, mapa in CATEGORIAS_TP.items():
+def tipar_categorias(df):                                              #Converte TP_DEPENDENCIA, TP_SITUACAO_FUNCIONAMENTO e 
+    total_fora = 0                                                     #TP_LOCALIZACAO de códigos numéricos para categorias com 
+    for coluna, mapa in CATEGORIAS_TP.items():                         #rótulo legível.
         df, fora = limpeza.tipar_categoria(
             df, coluna, list(mapa.values()), mapa=mapa)
         total_fora += fora
     return df, total_fora
 
 
-def derivar_infraestrutura(df):
-    """indice_infraestrutura: fracao (0 a 1) dos itens de infraestrutura que a
-    escola tem. Serve para comparar escolas de tamanhos e tipos diferentes com
-    uma unica medida de estrutura, que e o que a pergunta norteadora relaciona
-    ao IDEB. As quatro infra_* dao a mesma fracao por bloco."""
-    todas = [c for cols in GRUPOS_INFRA.values() for c in cols]
-    assert len(todas) == len(set(todas)), "item repetido entre blocos"
-    for bloco, colunas in GRUPOS_INFRA.items():
+def derivar_infraestrutura(df):                                            #Cria 5 colunas novas: as 4 frações por bloco 
+    todas = [c for cols in GRUPOS_INFRA.values() for c in cols]            #(infra_basica, infra_espacos_ensino, 
+    assert len(todas) == len(set(todas)), "item repetido entre blocos"     #infra_acessibilidade, infra_tecnologia) e o 
+    for bloco, colunas in GRUPOS_INFRA.items():                            #indice_infraestrutura geral.
         df[bloco] = limpeza.proporcao_presente(df, colunas)
     df["indice_infraestrutura"] = limpeza.proporcao_presente(df, todas)
     ativas = df["TP_SITUACAO_FUNCIONAMENTO"] == "em atividade"
@@ -165,8 +151,8 @@ def derivar_infraestrutura(df):
     return df, len(todas)
 
 
-def salvar(df):
-    PRATA.mkdir(parents=True, exist_ok=True)
+def salvar(df):                                                     #Grava o resultado em Parquet, que preserva Int8, categorias e 
+    PRATA.mkdir(parents=True, exist_ok=True)                        #booleanos, e devolve o caminho para a proveniência.
     destino = PRATA / "censo_escolas.parquet"
     df.to_parquet(destino, index=False)
     print("salvo em:", destino, df.shape)

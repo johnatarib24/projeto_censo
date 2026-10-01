@@ -64,12 +64,12 @@ def gerar(caminho: Path, titulo: str, minimal: bool = False, **kwargs_leitura) -
 
 def main():
     
-    arquivo_ideb = _extracted_from_main_3(
+    arquivo_ideb = localizar_arquivo_recente(
         "dados/bronze/ideb_anos_iniciais_escolas", "*.csv", "perfilando IDEB:"
     )
     print(gerar(arquivo_ideb, "IDEB - Anos Iniciais - Escolas 2025"))
 
-    arquivo_censo = _extracted_from_main_3(
+    arquivo_censo = localizar_arquivo_recente(
         "dados/bronze/microdados_censo_escolar",
         "Tabela_Escola_2025_V2*.csv",
         "perfilando Censo Escolar (Tabela_Escola):",
@@ -82,11 +82,9 @@ def main():
         encoding="latin-1",
     ))
 
-
-# TODO Rename this here and in `main`
-def _extracted_from_main_3(arg0, arg1, arg2):
-    pasta_ideb = mais_recente(Path(arg0))
-    result = localizar_arquivo(pasta_ideb, arg1)
+def localizar_arquivo_recente(arg0, arg1, arg2):
+    pasta = mais_recente(Path(arg0))
+    result = localizar_arquivo(pasta, arg1)
     print(arg2, result.name)
     return result
 

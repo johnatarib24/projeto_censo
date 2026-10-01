@@ -33,8 +33,7 @@ def tirar_espacos(df):
 
 def chave_texto(serie):
     """Versao comparavel de um texto: sem acento, sem espaco sobrando e em
-    minuscula. Serve para comparar e juntar, nao para exibir o rotulo
-    original continua na tabela."""
+    minuscula."""
     s = serie.str.strip().str.lower()
     s = s.str.normalize("NFKD")
     s = s.str.encode("ascii", errors="ignore")
@@ -47,9 +46,7 @@ def aplicar_mapa(serie, mapa):
 
 # ------------------------------------------------------------------ tipos
 def tipar_categoria(df, coluna, categorias, nova=None, ordenada=False, mapa=None):
-    """Declara a coluna como categoria. `categorias` e a lista de valores
-    validos (na ordem da escala, se `ordenada`). `mapa` traduz codigos em
-    rotulos antes. O que ficar fora da lista vira ausente e e contado."""
+
     antes = int(df[coluna].isna().sum())  # ausentes que ja existiam, antes do mapa
     origem = df[coluna].map(mapa) if mapa else df[coluna]
     tipada = pd.Categorical(origem, categories=list(categorias), ordered=ordenada)

@@ -18,7 +18,7 @@ DATASET_ID = "br_inep_ideb"
 TABLE_ID = "escola"
 BILLING_PROJECT_ID = "topicos-510201"
 
-BRONZE = Path("dados/bronze/ideb_anos_iniciais_escolas")
+BRONZE = Path("dados/bronze/ideb_escolas")
 
 
 def baixar():
