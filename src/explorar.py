@@ -65,7 +65,7 @@ def gerar(caminho: Path, titulo: str, minimal: bool = False, **kwargs_leitura) -
 def main():
     
     arquivo_ideb = localizar_arquivo_recente(
-        "dados/bronze/ideb_anos_iniciais_escolas", "*.csv", "perfilando IDEB:"
+        "dados/bronze/ideb_escolas", "*.csv", "perfilando IDEB:"
     )
     print(gerar(arquivo_ideb, "IDEB - Anos Iniciais - Escolas 2025"))
 
