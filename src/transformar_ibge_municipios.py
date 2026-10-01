@@ -2,9 +2,6 @@
 Camada prata da API de Localidades do IBGE (municipios).
 
     python src/transformar_ibge_municipios.py
-
-Achata o JSON aninhado em uma tabela: um municipio por linha, com UF e regiao.
-Grava dados/prata/ibge_municipios.parquet. Rode a partir da raiz do projeto.
 """
 import json
 from pathlib import Path
@@ -16,8 +13,6 @@ import limpeza
 BRONZE = Path("dados/bronze/ibge_municipios")
 PRATA = Path("dados/prata")
 
-# O que e uma linha? Um municipio. O id (7 digitos) e o mesmo codigo usado
-# como id_municipio no IDEB e como CO_MUNICIPIO no Censo.
 CHAVE = ["id_municipio"]
 TAMANHO_ID = 7
 REGIOES = ["Norte", "Nordeste", "Centro-Oeste", "Sudeste", "Sul"]

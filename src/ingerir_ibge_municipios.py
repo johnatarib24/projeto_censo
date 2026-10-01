@@ -1,10 +1,7 @@
 """
 Bronze da terceira fonte: API de Localidades do IBGE (municipios).
 
-    python src/ingerir_ibge_municipios.py
-
-A API e aberta e nao pede chave. Guarda a resposta crua (JSON) em
-dados/bronze/ibge_municipios/DDMMYYYY/ e registra a proveniencia.
+    python src/ingerir_ibge_municipios.py.
 """
 import json
 from datetime import date, datetime
@@ -23,8 +20,6 @@ def baixar():
     resposta.raise_for_status()
     dados = resposta.json()
 
-    # Esta API nao pagina nem informa total. A conferencia possivel e:
-    # veio uma lista, com volume plausivel e sem id repetido.
     if not isinstance(dados, list):
         raise ValueError(f"resposta inesperada: {type(dados)}")
     ids = [m["id"] for m in dados]
@@ -50,8 +45,6 @@ def registrar(pasta, arquivos, n_municipios, data_http):
         "quantidade_arquivos": len(arquivos),
         "arquivos": arquivos,
         "municipios_recebidos": n_municipios,
-        # a API nao informa quando a base foi atualizada; o Date e quando
-        # o servidor respondeu
         "resposta_http_date": data_http,
         "extraido_em": datetime.now().isoformat(),
     }

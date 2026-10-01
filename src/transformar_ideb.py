@@ -2,10 +2,6 @@
 Camada prata do IDEB (Base dos Dados: br_inep_ideb.escola).
 
     python src/transformar_ideb.py
-
-Le a extracao mais recente da bronze, aplica as decisoes de tratamento e grava
-dados/prata/ideb_escolas.parquet. A bronze nunca e alterada.
-Rode a partir da raiz do projeto (o import de limpeza depende disso).
 """
 from pathlib import Path
 
@@ -16,12 +12,9 @@ import limpeza
 BRONZE = Path("dados/bronze/ideb_anos_iniciais_escolas")
 PRATA = Path("dados/prata")
 
-# Recorte da pergunta norteadora (ver README)
 ANO = 2025
 ANOS_ESCOLARES = "iniciais (1-5)"
 
-# O que e uma linha? Uma escola. Depois do recorte (ano 2025, anos iniciais)
-# so sobra uma linha por escola: id_escola e unico.
 CHAVE = ["id_escola"]
 
 COLUNAS_TEXTO_ID = {"id_municipio": str, "id_escola": str}
@@ -35,18 +28,14 @@ NUMERICAS = [
     "projecao",
 ]
 
-# Faixas validas vindas do dominio (nao da estatistica)
 FAIXAS_VALIDAS = {
     "ideb": (0, 10),
     "taxa_aprovacao": (0, 100),
 }
 
-# Colunas em que vale marcar valores extremos
 COLUNAS_EXTREMOS = ["ideb", "taxa_aprovacao"]
 
-# Escala de categorias da fonte (especifica desta fonte, por isso fica aqui)
 CATEGORIAS_REDE = ["federal", "estadual", "municipal"]
-
 
 def carregar():
     pasta = limpeza.mais_recente(BRONZE)
@@ -54,7 +43,6 @@ def carregar():
     if not arquivos:
         raise FileNotFoundError(f"nenhum CSV em {pasta}")
     caminho = arquivos[-1]
-    # ids como texto: codigo de municipio/escola nao e numero
     df = pd.read_csv(caminho, dtype=COLUNAS_TEXTO_ID, low_memory=False)
     print("lido:", caminho, df.shape)
     print(df.columns.tolist())
@@ -63,7 +51,6 @@ def carregar():
 
 
 def filtrar_recorte(df):
-    """Nao e limpeza de erro: e o recorte da pergunta (ano e etapa)."""
     antes = len(df)
     mascara = (df["ano"] == ANO) & (df["anos_escolares"] == ANOS_ESCOLARES)
     if not mascara.any():

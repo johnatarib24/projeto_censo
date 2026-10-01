@@ -1,9 +1,3 @@
-"""Funcoes de limpeza que servem a qualquer fonte.
-
-Teste para saber se algo mora aqui: a funcao menciona o nome de alguma fonte?
-Se menciona, fica no script daquela fonte. Se nao menciona, e deste modulo.
-Dicionarios de sinonimos, faixas validas e listas de colunas sao da fonte.
-"""
 from datetime import datetime
 from pathlib import Path
 
@@ -39,7 +33,7 @@ def tirar_espacos(df):
 
 def chave_texto(serie):
     """Versao comparavel de um texto: sem acento, sem espaco sobrando e em
-    minuscula. Serve para comparar e juntar, nao para exibir: o rotulo
+    minuscula. Serve para comparar e juntar, nao para exibir o rotulo
     original continua na tabela."""
     s = serie.str.strip().str.lower()
     s = s.str.normalize("NFKD")
@@ -48,8 +42,6 @@ def chave_texto(serie):
 
 
 def aplicar_mapa(serie, mapa):
-    """Troca variantes pelo valor canonico. O que nao estiver no mapa fica
-    como esta. O mapa e escrito no script da fonte, nao aqui."""
     return serie.replace(mapa)
 
 
@@ -93,10 +85,7 @@ def limites_iqr(serie):
 
 
 def marcar_extremos(df, coluna, com_z=False):
-    """Marca (nao remove) extremos por IQR em `<coluna>_extremo` e, se
-    `com_z`, por z-score > 3 em `<coluna>_z`. Se o IQR for zero (coluna
-    concentrada em um valor), todo valor diferente viraria extremo: nesse
-    caso o IQR nao e marcado. Retorna (df, n_iqr, n_z)."""
+
     serie = pd.to_numeric(df[coluna], errors="coerce")
     baixo, alto = limites_iqr(serie.dropna())
     n_iqr = n_z = None

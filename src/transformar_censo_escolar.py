@@ -2,10 +2,6 @@
 Camada prata do Censo Escolar 2025 (Tabela_Escola).
 
     python src/transformar_censo_escolar.py
-
-Le a extracao mais recente da bronze, aplica as decisoes de tratamento e grava
-dados/prata/censo_escolas.parquet. A bronze nunca e alterada.
-Rode a partir da raiz do projeto (o import de limpeza depende disso).
 """
 from pathlib import Path
 
@@ -17,25 +13,16 @@ BRONZE = Path("dados/bronze/microdados_censo_escolar")
 PRATA = Path("dados/prata")
 PADRAO = "Tabela_Escola_2025_V2*.csv"
 
-# O que e uma linha? Uma escola. CO_ENTIDADE e o codigo unico dela.
 CHAVE = ["CO_ENTIDADE"]
 
-# Codigos sao identificadores, nao numeros: sem isso perdem o zero a esquerda
 COLUNAS_ID = ["CO_ENTIDADE", "CO_MUNICIPIO", "CO_UF"]
 TAMANHO_CO_MUNICIPIO = 7
 
-# Codigos especiais do Censo (dicionario de dados do INEP):
-#  9     = "Nao informado" (definido em 10 das 16 colunas IN_* que o trazem;
-#          nas 6 IN_EDUC_AMB_* o 9 aparece mas o dicionario nao o define)
-#  88888 = "registro com marcacao de valor extremo" nas colunas QT_*
 CODIGO_IN_SEM_RESPOSTA = 9
 CODIGO_QT_EXTREMO_INEP = 88888
 
-# Colunas com contagem em que vale marcar extremos. QT_DESKTOP_ALUNO ficou
-# de fora: 75% das escolas tem 0 ou poucos, o IQR marcaria 15% como extremo.
 COLUNAS_EXTREMOS = ["QT_SALAS_UTILIZADAS"]
 
-# Categorias (rotulos do dicionario de dados do INEP), sem ordem natural
 CATEGORIAS_TP = {
     "TP_DEPENDENCIA": {1: "federal", 2: "estadual", 3: "municipal", 4: "privada"},
     "TP_SITUACAO_FUNCIONAMENTO": {
@@ -45,11 +32,6 @@ CATEGORIAS_TP = {
     "TP_LOCALIZACAO": {1: "urbana", 2: "rural"},
 }
 
-# Atributo derivado: indice de infraestrutura (ver README). Cada item e uma
-# coluna IN_* (0/1). Escolhidos para nao repetir informacao: ficam de fora as
-# colunas "..._INEXISTENTE" (inverso de outras), os subconjuntos (quadra
-# coberta/descoberta, biblioteca x sala de leitura) e o que nao se aplica aos
-# anos iniciais (educacao profissional, dormitorios).
 GRUPOS_INFRA = {
     "infra_basica": [
         "IN_AGUA_POTAVEL", "IN_ENERGIA_REDE_PUBLICA", "IN_ESGOTO_REDE_PUBLICA",
@@ -117,7 +99,7 @@ def tipar_indicadores(df):
 
 def tratar_sentinela_qt(df):
     """Nas colunas QT_*, o INEP grava 88888 no lugar de valores que ele mesmo
-    marcou como extremos (acima de um limite de plausibilidade). O valor real
+    marcou como extremos. O valor real
     nao esta no arquivo, entao vira ausente; a escola fica marcada em
     qt_extremo_inep para nao perder a informacao."""
     colunas = [c for c in df.columns if c.startswith("QT_")]
