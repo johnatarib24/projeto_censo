@@ -9,7 +9,7 @@ import pandas as pd
 
 import limpeza
 
-BRONZE = Path("dados/bronze/ideb_anos_iniciais_escolas")
+BRONZE = Path("dados/bronze/ideb_escolas")
 PRATA = Path("dados/prata")
 
 ANO = 2025

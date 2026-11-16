@@ -159,7 +159,6 @@ def salvar(df):                                                     #Grava o res
     return destino
 
 
-def main():
     df, origem = carregar()
     antes = len(df)
 
