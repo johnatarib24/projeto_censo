@@ -4,15 +4,18 @@
 
 ## Pergunta norteadora
 
-Nos estados brasileiros (26 UFs e o Distrito Federal), existe associação entre a estrutura das
-escolas municipais e o desempenho educacional medido pelo IDEB dos anos iniciais do ensino
-fundamental em 2025?
+Nos estados brasileiros (26 UFs), existe associação entre a estrutura das escolas municipais e o
+desempenho educacional medido pelo IDEB dos anos iniciais do ensino fundamental em 2025?
 
 **Nível de análise.** A Entrega 1 propunha o nível municipal. A análise principal passou a ser
-por UF (27 observações): média do IDEB dos anos iniciais contra média do `indice_infraestrutura`
+por UF (26 observações): média do IDEB dos anos iniciais contra média do `indice_infraestrutura`
 das escolas municipais de cada UF. A comparação mostra **associação, não causa**: UFs mais ricas
 tendem a ter melhor estrutura e melhor IDEB ao mesmo tempo. A tabela por município fica prevista
 como análise complementar (ver "Decisões para a integração").
+
+**O Distrito Federal fica de fora.** A pergunta é sobre escolas municipais, e o DF não tem rede
+municipal: suas 335 escolas com IDEB aparecem como `estadual`. Por isso a análise cobre 26 UFs,
+e não 27.
 
 ## Fontes de dados
 
@@ -20,19 +23,20 @@ como análise complementar (ver "Decisões para a integração").
 |---|---|---|---|---|
 | IDEB - Anos Iniciais, Escolas 2025 | CSV | API (Base dos Dados / BigQuery) | 30/09/2026 | basedosdados.org (`br_inep_ideb.escola`) |
 | Censo Escolar 2025 - Tabela_Escola | CSV | Arquivo baixado | 30/09/2026 | download.inep.gov.br/dados_abertos |
-| Localidades do IBGE - Municípios | JSON | API aberta (sem chave) | 30/09/2026 | servicodados.ibge.gov.br/api/v1/localidades/municipios |
 
 **Chaves de ligação**
 - Escola: `id_escola` (IDEB) = `CO_ENTIDADE` (Censo Escolar).
-- Município: `id_municipio` (IDEB) = `CO_MUNICIPIO` (Censo) = `id` (IBGE), todos com 7 dígitos.
+- Município: `id_municipio` (IDEB) = `CO_MUNICIPIO` (Censo), com 7 dígitos.
 - UF: `sigla_uf` (IDEB) e `SG_UF` (Censo).
 
-**Por que o IBGE está no projeto.** IDEB e Censo já trazem a UF, então o IBGE não é necessário
-para a junção principal. Ele entra para (1) fornecer a região (5 grupos), que permite agrupar e
-controlar as 27 UFs em blocos comparáveis, e (2) conferir os códigos de município das outras duas
-fontes contra uma lista oficial. **Limitação:** ele descreve um retrato, sem série temporal. A
-dimensão de tempo, se necessária, viria das edições anteriores do IDEB (2005-2023), que já estão na
-bronze e foram deixadas fora do recorte da pergunta.
+**Fonte retirada: IBGE (Localidades).** Ela entraria só para fornecer a região (5 grupos) e para
+conferir os códigos de município. Como IDEB e Censo já trazem UF e município, e a análise principal
+é por UF, a fonte foi retirada do projeto. A linha dela em `dados/prata/proveniencia.jsonl` é
+registro histórico da primeira versão da prata.
+
+**Limitação de tempo.** As duas fontes descrevem 2025, sem série temporal. A dimensão de tempo, se
+necessária, viria das edições anteriores do IDEB (2005-2023), que já estão na bronze e foram
+deixadas fora do recorte da pergunta.
 
 ## Defeitos conhecidos das fontes
 
@@ -52,14 +56,6 @@ bronze e foram deixadas fora do recorte da pergunta.
   de 30/09/2026: `curl: (35) Recv failure`); o script usa `--retry` e retomada (`-C -`) e o ZIP
   extraiu sem erro, com as mesmas 214.192 linhas e 290 colunas da extração anterior.
 
-### IBGE (API de Localidades)
-- A resposta é um JSON aninhado (município > microrregião > mesorregião > UF > região), que
-  precisa ser achatado em tabela.
-- A API não pagina e não informa total. A conferência possível é: veio uma lista, com volume
-  plausível (mais de 5.000 municípios) e sem `id` repetido.
-- A API não informa quando a base foi atualizada; a proveniência guarda o `Date` HTTP (quando o
-  servidor respondeu).
-
 ## Como rodar
 
 ```bash
@@ -68,13 +64,14 @@ pip install -r requirements.txt
 # bronze
 python src/ingerir_ideb.py
 python src/ingerir_censo_escolar.py
-python src/ingerir_ibge_municipios.py
 python src/explorar.py
 
 # prata (rode a partir da raiz do projeto: o import de limpeza depende disso)
 python src/transformar_ideb.py
 python src/transformar_censo_escolar.py
-python src/transformar_ibge_municipios.py
+
+# enriquecimento (junta IDEB e Censo; também a partir da raiz)
+python src/enriquecer.py
 
 # conferência da prata (sai com erro se algum invariante falhar)
 python src/validar_prata.py
@@ -88,14 +85,14 @@ python src/validar_prata.py
 | `explorar.py` | Perfilamento das fontes |
 | `limpeza.py` | Funções de limpeza genéricas (não mencionam nenhuma fonte) |
 | `transformar_*.py` | Prata: decisões específicas de cada fonte |
+| `enriquecer.py` | Prata: junção do IDEB com o Censo e atributos que só existem depois dela |
 | `validar_prata.py` | Asserts sobre a prata, por fonte e entre fontes |
 
 ## Decisões de tratamento (camada prata)
 
-Scripts: `src/transformar_ideb.py`, `src/transformar_censo_escolar.py` e
-`src/transformar_ibge_municipios.py`. Leem a extração mais recente da bronze (que nunca é
-alterada), gravam Parquet em `dados/prata/` e registram cada decisão, com números, em
-`dados/prata/proveniencia.jsonl`.
+Scripts: `src/transformar_ideb.py` e `src/transformar_censo_escolar.py`. Leem a extração mais
+recente da bronze (que nunca é alterada), gravam Parquet em `dados/prata/` e registram cada
+decisão, com números, em `dados/prata/proveniencia.jsonl`.
 
 ### IDEB (`dados/prata/ideb_escolas.parquet`)
 
@@ -136,19 +133,6 @@ coluna `QT_SALAS_UTILIZADAS_extremo`).
 Efeito do tratamento do `88888`: em `QT_DESKTOP_ALUNO` o máximo caiu de 88.888 para 2.297 e a média
 de 152 para 6,12.
 
-### IBGE (`dados/prata/ibge_municipios.parquet`)
-
-**Chave:** `id_municipio` (0 repetições). **Volume:** 5.571 municípios (5.570 dos estados + o Distrito Federal), 4 colunas
-(`id_municipio`, `nome_municipio`, `sigla_uf`, `regiao`).
-
-| Defeito / questão | Decisão | Números |
-|---|---|---|
-| JSON aninhado | Achatado em uma linha por município; UF e região lidas de microrregião > mesorregião > UF | 5.571 municípios |
-| Microrregião vazia em alguns municípios | Caminho alternativo: UF lida de região imediata > região intermediária | 1 município |
-| `id` como número perderia zero à esquerda | `id_municipio` lido como texto; tamanho de 7 dígitos conferido | 0 fora do tamanho |
-| Região como texto livre | Tipada como categoria com 5 valores (Norte, Nordeste, Centro-Oeste, Sudeste, Sul) | 0 valores fora da lista |
-| Ausentes em nome, UF e região | Conferidos | 0 ausentes |
-
 ### Consistência entre as fontes
 
 - 63.373 das 66.138 escolas do IDEB (95,8%) aparecem no Censo pela chave `id_escola` = `CO_ENTIDADE`.
@@ -156,6 +140,47 @@ de 152 para 6,12.
 - Em 46 escolas as duas fontes discordam da rede (ex.: municipal no IDEB e privada no Censo).
 - `src/validar_prata.py` confere esses invariantes (chaves únicas, faixas, tipos, cobertura
   entre fontes e proveniência) e falha com código de saída 1 se algum deixar de valer.
+
+## Enriquecimento (`src/enriquecer.py`)
+
+Saída: `dados/prata/ideb_censo_enriquecido.parquet`.
+**Grão:** uma linha por escola do IDEB (anos iniciais, 2025). O resultado precisa ter as mesmas
+66.138 linhas da tabela do IDEB.
+
+**Junção:** IDEB (esquerda) com Censo (direita), por `id_escola = CO_ENTIDADE`, `how="left"` e
+`validate="one_to_one"`. O `left` parte do IDEB porque a pergunta é sobre escolas com IDEB; antes
+da junção, o script reduz o Censo às colunas que interessam (tipo de rede, situação, localização,
+índices de infraestrutura e `qt_extremo_inep`).
+
+| Conferência | Resultado |
+|---|---|
+| Linhas no IDEB | 66.138 |
+| Linhas após a junção | 66.138 |
+| IDEB sem par no Censo | 2.765 |
+
+### Quem não casou
+
+As 2.765 escolas do IDEB sem par no Censo são 1.597 municipais e 1.168 estaduais (nenhuma
+federal). Todas estão sem IDEB calculado (0 com IDEB), então saem da análise de qualquer forma e
+nenhuma escola com IDEB se perdeu na junção.
+
+### Discordâncias entre as fontes
+
+Entre as escolas que casaram: 0 com UF diferente, 0 com município diferente e 46 com rede
+diferente (as mesmas 46 já registradas na prata).
+
+### Atributos que só existem depois da junção
+
+- `na_analise`: verdadeiro para escolas municipais (`rede` no IDEB e `TP_DEPENDENCIA` no Censo),
+  em atividade, com IDEB calculado e com `indice_infraestrutura`. Garante as mesmas escolas nos
+  dois lados da comparação. São **36.731 escolas em 26 UFs**. De 51.733 escolas municipais no IDEB,
+  36.731 têm IDEB; nenhum dos outros critérios elimina escola adicional. O menor grupo é RR, com 105
+  escolas.
+- `infra_dif_mediana_uf`: índice de infraestrutura da escola menos a mediana da sua UF, entre as
+  escolas de `na_analise`. Só existe depois da junção porque o índice vem do Censo.
+- `ideb_dif_mediana_uf`: IDEB da escola menos a mediana da sua UF, também entre as escolas de
+  `na_analise`. Mostra se a escola está acima ou abaixo do padrão do próprio estado, que é a
+  unidade da pergunta. Fica vazio nas escolas do DF (335 com IDEB), que não entram na análise.
 
 ## Atributos derivados
 
@@ -170,22 +195,26 @@ iniciais. Ausente quando todos os itens são ausentes (escolas paralisadas ou ex
 A mesma fração, calculada por bloco (6, 7, 5 e 7 itens). Servem para ver se a associação com o
 IDEB vem de um tipo específico de estrutura. Ausentes nas mesmas condições.
 
+### na_analise, infra_dif_mediana_uf, ideb_dif_mediana_uf
+Ver "Atributos que só existem depois da junção".
+
 ## Tipos
 - `TP_DEPENDENCIA`, `TP_SITUACAO_FUNCIONAMENTO`, `TP_LOCALIZACAO`: categorias com os rótulos do
   dicionário do INEP (sem ordem natural). `rede` (IDEB): federal, estadual, municipal.
   Os filtros usam o rótulo (`TP_DEPENDENCIA == "municipal"`), não o código.
 - `IN_*`: Int8 (0/1 com ausente). Códigos de identificação: texto.
-- `regiao` (IBGE): categoria com 5 valores.
 
 ## Decisões para a integração (próxima etapa)
 
-- **Mesmas escolas nos dois lados.** As duas médias por UF devem usar as mesmas escolas:
-  municipais (`rede = 'municipal'` no IDEB / `TP_DEPENDENCIA == "municipal"` no Censo), em
-  atividade (`TP_SITUACAO_FUNCIONAMENTO == "em atividade"`) e com IDEB calculado. Sem isso,
-  a média de infraestrutura e a do IDEB descreveriam grupos diferentes.
+- **Mesmas escolas nos dois lados.** As duas médias por UF devem usar as mesmas escolas, e isso já
+  está pronto na coluna `na_analise` (municipais, em atividade, com IDEB). Sem isso, a média de
+  infraestrutura e a do IDEB descreveriam grupos diferentes.
 - **Média simples ou ponderada.** Uma escola pequena pesa o mesmo que uma grande na média simples.
-  Calcular também a média ponderada por matrículas e comparar os resultados.
-- **Poucas observações.** São 27 pontos, e uma associação entre UFs não vale para cada escola.
+  A ideia era calcular também a média ponderada por matrículas, mas a tabela enriquecida não traz
+  coluna de matrículas (a `QT_MAT_FUND_AI` não existe na prata do Censo). Decisão: usar a média
+  simples; se uma coluna de matrículas estiver disponível na hora da integração, calcular a
+  ponderada como sensibilidade.
+- **Poucas observações.** São 26 pontos, e uma associação entre UFs não vale para cada escola.
   Mostrar também os quatro blocos `infra_*` para ver qual associa mais.
 - **Análise complementar por município.** 5.451 municípios têm ao menos uma escola municipal com
   IDEB, mas só 2.030 têm 5 ou mais; esse é o corte mínimo natural para a tabela municipal.
