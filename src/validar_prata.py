@@ -16,7 +16,6 @@ log = logging.getLogger(__name__)
 
 REDES = {"federal", "estadual", "municipal"}
 CODIGO_QT_EXTREMO_INEP = 88888
-N_UFS_ANALISE = 26  # 27 UFs menos o DF, que nao tem rede municipal
 CAMPOS_PROVENIENCIA = {"origem", "arquivo_prata", "linhas_antes", "linhas_depois",
                        "decisoes", "transformado_em"}
 
@@ -100,8 +99,8 @@ def validar_enriquecido(c, df, ideb):
     c.exigir((na == criterios).all(), "enriquecido: na_analise segue os 5 criterios")
 
     ufs = set(df.loc[na, "sigla_uf"].unique())
-    c.exigir(len(ufs) == N_UFS_ANALISE and "DF" not in ufs,
-             f"enriquecido: na_analise cobre {N_UFS_ANALISE} UFs, sem o DF")
+    c.exigir(len(ufs) == config.N_UFS_ANALISE and "DF" not in ufs,
+             f"enriquecido: na_analise cobre {config.N_UFS_ANALISE} UFs, sem o DF")
 
 
 def validar_proveniencia(c, tamanhos):
