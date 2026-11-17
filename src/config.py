@@ -17,6 +17,7 @@ PRATA = DADOS / "prata"
 OURO = DADOS / "ouro"
 RELATORIOS = RAIZ / "relatorios"
 ARQUIVO_LOG = RAIZ / "pipeline.log"
+BANCO = OURO / "projeto.duckdb"
 
 BRONZE_IDEB = BRONZE / "ideb_escolas"
 BRONZE_CENSO = BRONZE / "microdados_censo_escolar"
@@ -24,6 +25,7 @@ BRONZE_CENSO = BRONZE / "microdados_censo_escolar"
 # ---------------------------------------------------------------- parametros
 ANO = 2025
 ANOS_ESCOLARES = "iniciais (1-5)"
+N_UFS_ANALISE = 26  # 27 UFs menos o DF, que nao tem rede municipal
 
 # IDEB (Base dos Dados). O projeto de cobranca do Google Cloud pode ser
 # trocado por variavel de ambiente, sem editar o codigo.
