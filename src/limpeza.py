@@ -125,6 +125,15 @@ def registrar(pasta_prata, info):
     pasta_prata.mkdir(parents=True, exist_ok=True)
     caminho = pasta_prata / "proveniencia.jsonl"
     info = {**info, "transformado_em": datetime.now().isoformat(timespec="seconds")}
+    # se o arquivo nao termina em quebra de linha (ex.: salvo por um editor),
+    # o registro novo ficaria colado no ultimo
+    precisa_quebra = False
+    if caminho.exists() and caminho.stat().st_size > 0:
+        with caminho.open("rb") as f:
+            f.seek(-1, 2)
+            precisa_quebra = f.read(1) != b"\n"
     with caminho.open("a", encoding="utf-8") as f:
+        if precisa_quebra:
+            f.write("\n")
         f.write(json.dumps(info, ensure_ascii=False) + "\n")
     log.info("proveniencia registrada em: %s", caminho)

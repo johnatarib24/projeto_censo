@@ -21,7 +21,7 @@ e não 27.
 
 | Fonte | Formato | Acesso | Extraído | Link |
 |---|---|---|---|---|
-| IDEB - Anos Iniciais, Escolas 2025 | CSV | API (Base dos Dados / BigQuery) | 30/09/2026 | basedosdados.org (`br_inep_ideb.escola`) |
+| IDEB - Anos Iniciais, Escolas 2025 | CSV | API (Base dos Dados / BigQuery) | 01/10/2026 | basedosdados.org (`br_inep_ideb.escola`) |
 | Censo Escolar 2025 - Tabela_Escola | CSV | Arquivo baixado | 30/09/2026 | download.inep.gov.br/dados_abertos |
 
 **Chaves de ligação**
@@ -31,8 +31,8 @@ e não 27.
 
 **Fonte retirada: IBGE (Localidades).** Ela entraria só para fornecer a região (5 grupos) e para
 conferir os códigos de município. Como IDEB e Censo já trazem UF e município, e a análise principal
-é por UF, a fonte foi retirada do projeto. A linha dela em `dados/prata/proveniencia.jsonl` é
-registro histórico da primeira versão da prata.
+é por UF, a fonte foi retirada do projeto, junto com a bronze, a prata e o registro dela em
+`dados/prata/proveniencia.jsonl`.
 
 **Limitação de tempo.** As duas fontes descrevem 2025, sem série temporal. A dimensão de tempo, se
 necessária, viria das edições anteriores do IDEB (2005-2023), que já estão na bronze e foram

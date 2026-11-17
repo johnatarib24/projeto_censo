@@ -136,7 +136,7 @@ def main():
 
     destino = salvar(df)
     limpeza.registrar(PRATA, {
-        "origem": str(origem),
+        "origem": origem.relative_to(config.RAIZ).as_posix(),
         "arquivo_prata": destino.name,
         "linhas_antes": antes,
         "linhas_depois": len(df),
