@@ -1,7 +1,12 @@
+"""Funcoes de limpeza genericas: nao mencionam nenhuma fonte."""
+import json
+import logging
 from datetime import datetime
 from pathlib import Path
 
 import pandas as pd
+
+log = logging.getLogger(__name__)
 
 FORMATO_PASTA = "%d%m%Y"
 
@@ -46,13 +51,13 @@ def aplicar_mapa(serie, mapa):
 
 # ------------------------------------------------------------------ tipos
 def tipar_categoria(df, coluna, categorias, nova=None, ordenada=False, mapa=None):
-
     antes = int(df[coluna].isna().sum())  # ausentes que ja existiam, antes do mapa
     origem = df[coluna].map(mapa) if mapa else df[coluna]
     tipada = pd.Categorical(origem, categories=list(categorias), ordered=ordenada)
     fora = int(pd.isna(tipada).sum()) - antes
     df[nova or coluna] = tipada
-    print(f"{nova or coluna}: {fora} valores fora das categorias viraram ausentes")
+    nivel = log.warning if fora else log.info
+    nivel("%s: %d valores fora das categorias viraram ausentes", nova or coluna, fora)
     return df, fora
 
 
@@ -60,19 +65,23 @@ def tipar_categoria(df, coluna, categorias, nova=None, ordenada=False, mapa=None
 def conferir_chave(df, chave, mostrar=()):
     """Conta repeticoes da chave, mostra exemplos e remove as repetidas."""
     repetidas = int(df.duplicated(subset=chave).sum())
-    print("chaves repetidas:", repetidas)
     if repetidas:
         ver = list(chave) + [c for c in mostrar if c in df.columns]
-        print(df[df.duplicated(subset=chave, keep=False)]
-              .sort_values(chave).head(20)[ver])
+        exemplos = (df[df.duplicated(subset=chave, keep=False)]
+                    .sort_values(chave).head(20)[ver])
+        log.warning("chaves repetidas: %d\n%s", repetidas, exemplos.to_string())
+    else:
+        log.info("chaves repetidas: 0")
     return df.drop_duplicates(subset=chave).copy(), repetidas
 
 
 def remover_fora_da_faixa(df, coluna, minimo, maximo):
     """Remove so o que esta fora da faixa do dominio. Ausente nao e erro."""
     invalido = df[coluna].notna() & ~df[coluna].between(minimo, maximo)
-    print(f"{coluna} fora de [{minimo}, {maximo}] removidas:", int(invalido.sum()))
-    return df[~invalido].copy(), int(invalido.sum())
+    n = int(invalido.sum())
+    nivel = log.warning if n else log.info
+    nivel("%s fora de [%s, %s] removidas: %d", coluna, minimo, maximo, n)
+    return df[~invalido].copy(), n
 
 
 def limites_iqr(serie):
@@ -82,21 +91,20 @@ def limites_iqr(serie):
 
 
 def marcar_extremos(df, coluna, com_z=False):
-
     serie = pd.to_numeric(df[coluna], errors="coerce")
     baixo, alto = limites_iqr(serie.dropna())
     n_iqr = n_z = None
     if alto == baixo:
-        print(f"{coluna}: IQR = 0, extremos por IQR nao marcados")
+        log.warning("%s: IQR = 0, extremos por IQR nao marcados", coluna)
     else:
         df[coluna + "_extremo"] = (serie < baixo) | (serie > alto)
         n_iqr = int(df[coluna + "_extremo"].sum())
-        print(f"{coluna}: IQR marcou {n_iqr} (limites {baixo:.2f} a {alto:.2f})")
+        log.info("%s: IQR marcou %d (limites %.2f a %.2f)", coluna, n_iqr, baixo, alto)
     if com_z:
         z = (serie - serie.mean()) / serie.std()
         df[coluna + "_z"] = z.abs() > 3
         n_z = int(df[coluna + "_z"].sum())
-        print(f"{coluna}: z-score marcou {n_z}")
+        log.info("%s: z-score marcou %d", coluna, n_z)
     return df, n_iqr, n_z
 
 
@@ -105,8 +113,7 @@ def proporcao_presente(df, colunas):
     """Fracao (0 a 1) das colunas 0/1 que valem 1, por linha. Ausente nao
     conta nem a favor nem contra; se todas forem ausentes, o resultado e
     ausente. Exige que todas as colunas existam."""
-
-    if faltando:= [c for c in colunas if c not in df.columns]:
+    if faltando := [c for c in colunas if c not in df.columns]:
         raise KeyError(f"colunas inexistentes: {faltando}")
     return df[list(colunas)].astype("float64").mean(axis=1)
 
@@ -114,11 +121,10 @@ def proporcao_presente(df, colunas):
 # ------------------------------------------------------------ persistencia
 def registrar(pasta_prata, info):
     """Acrescenta uma linha em proveniencia.jsonl da prata."""
-    import json
     pasta_prata = Path(pasta_prata)
     pasta_prata.mkdir(parents=True, exist_ok=True)
     caminho = pasta_prata / "proveniencia.jsonl"
     info = {**info, "transformado_em": datetime.now().isoformat(timespec="seconds")}
     with caminho.open("a", encoding="utf-8") as f:
         f.write(json.dumps(info, ensure_ascii=False) + "\n")
-    print("proveniencia registrada em:", caminho)
+    log.info("proveniencia registrada em: %s", caminho)

@@ -1,19 +1,21 @@
 """
 Enriquecimento (camada prata): IDEB (escola) + Censo Escolar (escola).
 
-Roda a partir da raiz do projeto:
     python src/enriquecer.py
 
 Saida: dados/prata/ideb_censo_enriquecido.parquet
 Grao do resultado: uma linha por escola do IDEB (anos iniciais, 2025).
 """
-from pathlib import Path
+import logging
 
 import pandas as pd
 
+import config
 import limpeza
 
-PRATA = Path("dados/prata")
+log = logging.getLogger(__name__)
+
+PRATA = config.PRATA
 
 # Reduzir antes de juntar: so o que o Censo acrescenta ao IDEB.
 COLUNAS_CENSO = [
@@ -22,68 +24,66 @@ COLUNAS_CENSO = [
     "indice_infraestrutura",
     "infra_basica", "infra_espacos_ensino", "infra_acessibilidade", "infra_tecnologia",
     "qt_extremo_inep",
-    "QT_MAT_FUND_AI",  # matriculas dos anos iniciais (peso da media ponderada); confira o nome
 ]
 
 
-# ------------------------------------------------------------ passo 1
 def conferir_chaves(esq, dir_, rotulo):
-    """Previsao do que a juncao vai fazer. Anote antes de juntar."""
+    """Previsao do que a juncao vai fazer."""
     esq, dir_ = set(esq.dropna()), set(dir_.dropna())
-    print(f"[{rotulo}] so na esquerda: {len(esq - dir_)} | "
-          f"so na direita: {len(dir_ - esq)} | nos dois: {len(esq & dir_)}")
+    log.info("[%s] so na esquerda: %d | so na direita: %d | nos dois: %d",
+             rotulo, len(esq - dir_), len(dir_ - esq), len(esq & dir_))
 
 
-# ------------------------------------------------------------ passo 2
 def juntar_censo(ideb, censo):
-    return ideb.merge(
+    df = ideb.merge(
         censo,
         left_on="id_escola",
         right_on="CO_ENTIDADE",
         how="left",
         validate="one_to_one",
     )
+    # o left insere ausentes numa coluna booleana e ela vira object
+    df["qt_extremo_inep"] = df["qt_extremo_inep"].astype("boolean")
+    return df
 
 
-# ------------------------------------------------------------ passo 3
 def validar(esquerda, resultado, coluna_marcadora, rotulo):
     """Conta antes/depois e devolve as linhas que nao casaram."""
     sem_par = resultado[coluna_marcadora].isna()
-    print(f"[{rotulo}] esquerda: {len(esquerda)} | resultado: {len(resultado)} "
-          f"| sem par: {int(sem_par.sum())}")
+    log.info("[%s] esquerda: %d | resultado: %d | sem par: %d",
+             rotulo, len(esquerda), len(resultado), int(sem_par.sum()))
     if len(resultado) != len(esquerda):
         raise ValueError(f"{rotulo}: o numero de linhas mudou (o grao foi alterado)")
     return resultado[sem_par]
 
 
-# ------------------------------------------------------------ passo 4
 def descrever_nao_casadas(sem_censo):
     """Os grupos de quem nao casou: sao o achado, nao o resto."""
-    print("\n-- IDEB sem par no Censo --")
-    print("por rede:\n", sem_censo["rede"].value_counts(dropna=False).to_string())
-    print("com IDEB calculado:", int(sem_censo["ideb_disponivel"].sum()),
-          "| sem IDEB:", int((~sem_censo["ideb_disponivel"]).sum()))
-    print("por UF (top 5):\n",
-          sem_censo["sigla_uf"].value_counts().head(5).to_string())
+    log.info("IDEB sem par no Censo, por rede:\n%s",
+             sem_censo["rede"].value_counts(dropna=False).to_string())
+    log.info("IDEB sem par no Censo: com IDEB calculado %d | sem IDEB %d",
+             int(sem_censo["ideb_disponivel"].sum()),
+             int((~sem_censo["ideb_disponivel"]).sum()))
+    log.info("IDEB sem par no Censo, por UF (top 5):\n%s",
+             sem_censo["sigla_uf"].value_counts().head(5).to_string())
 
 
 def conferir_consistencia(df):
     """Casos em que as fontes casaram pela escola mas discordam em outro campo."""
     casou = df["CO_ENTIDADE"].notna()
-    uf_dif = casou & (df["sigla_uf"] != df["SG_UF"])
-    mun_dif = casou & (df["id_municipio"] != df["CO_MUNICIPIO"])
-    rede_dif = casou & (df["rede"].astype("string") != df["TP_DEPENDENCIA"].astype("string"))
-    print("\n-- discordancias entre fontes --")
-    print("UF (IDEB x Censo):", int(uf_dif.sum()))
-    print("municipio (IDEB x Censo):", int(mun_dif.sum()))
-    print("rede (IDEB x Censo):", int(rede_dif.sum()))
-    return int(uf_dif.sum()), int(mun_dif.sum()), int(rede_dif.sum())
+    uf_dif = int((casou & (df["sigla_uf"] != df["SG_UF"])).sum())
+    mun_dif = int((casou & (df["id_municipio"] != df["CO_MUNICIPIO"])).sum())
+    rede_dif = int((casou & (df["rede"].astype("string")
+                             != df["TP_DEPENDENCIA"].astype("string"))).sum())
+    log.info("discordancias entre fontes: UF %d | municipio %d | rede %d",
+             uf_dif, mun_dif, rede_dif)
+    if uf_dif or mun_dif:
+        log.warning("UF ou municipio discordam entre IDEB e Censo")
+    return uf_dif, mun_dif, rede_dif
 
 
-# ------------------------------------------------------------ passo 5
 def derivar_pos_juncao(df):
     """Atributos que so existem depois da juncao."""
-    # 1) filtro de analise: as mesmas escolas nos dois lados (decisao do README)
     df["na_analise"] = (
         (df["rede"] == "municipal")
         & (df["TP_DEPENDENCIA"] == "municipal")
@@ -91,15 +91,18 @@ def derivar_pos_juncao(df):
         & df["ideb_disponivel"]
         & df["indice_infraestrutura"].notna()
     )
-    print("\nescolas em na_analise:", int(df["na_analise"].sum()))
+    log.info("escolas em na_analise: %d", int(df["na_analise"].sum()))
 
-    # 2) posicao da escola dentro da sua UF, so entre as escolas da analise
     base = df[df["na_analise"]]
     med_ideb = base.groupby("sigla_uf")["ideb"].median()
     med_infra = base.groupby("sigla_uf")["indice_infraestrutura"].median()
     df["ideb_dif_mediana_uf"] = df["ideb"] - df["sigla_uf"].map(med_ideb)
-    # so existe depois da juncao: o indice vem do Censo
     df["infra_dif_mediana_uf"] = df["indice_infraestrutura"] - df["sigla_uf"].map(med_infra)
+
+    sem_uf = int((df["ideb"].notna() & df["ideb_dif_mediana_uf"].isna()).sum())
+    if sem_uf:
+        log.warning("%d escolas com IDEB sem diferenca para a mediana da UF "
+                    "(UF sem escola municipal, como o DF)", sem_uf)
     return df
 
 
@@ -109,7 +112,7 @@ def main():
 
     faltando = [c for c in COLUNAS_CENSO if c not in censo.columns]
     if faltando:
-        print("aviso: colunas do Censo nao encontradas, ignoradas:", faltando)
+        log.warning("colunas do Censo nao encontradas, ignoradas: %s", faltando)
     censo = censo[[c for c in COLUNAS_CENSO if c in censo.columns]]
 
     n_ideb = len(ideb)
@@ -125,7 +128,7 @@ def main():
 
     destino = PRATA / "ideb_censo_enriquecido.parquet"
     df.to_parquet(destino, index=False)
-    print("salvo em:", destino, df.shape)
+    log.info("salvo em: %s %s", destino, df.shape)
 
     limpeza.registrar(PRATA, {
         "origem": "ideb_escolas.parquet + censo_escolas.parquet",
@@ -146,4 +149,5 @@ def main():
 
 
 if __name__ == "__main__":
+    config.configurar_log()
     main()

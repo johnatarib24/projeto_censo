@@ -61,32 +61,48 @@ deixadas fora do recorte da pergunta.
 ```bash
 pip install -r requirements.txt
 
-# bronze
-python src/ingerir_ideb.py
-python src/ingerir_censo_escolar.py
-python src/explorar.py
+# pipeline inteiro (de qualquer pasta)
+python src/pipeline.py
 
-# prata (rode a partir da raiz do projeto: o import de limpeza depende disso)
-python src/transformar_ideb.py
-python src/transformar_censo_escolar.py
-
-# enriquecimento (junta IDEB e Censo; também a partir da raiz)
-python src/enriquecer.py
+# a partir de uma etapa: ingestao, transformacao, enriquecimento
+python src/pipeline.py transformacao
 
 # conferência da prata (sai com erro se algum invariante falhar)
 python src/validar_prata.py
+
+# perfilamento das fontes (fora do pipeline: gera HTML em relatorios/)
+python src/explorar.py
 ```
+
+Cada script também roda sozinho (`python src/transformar_ideb.py`, por exemplo). Como os caminhos
+saem de `src/config.py`, não importa de qual pasta o comando é dado.
+
+A ingestão do IDEB abre uma janela de login do Google na primeira vez, e o download do Censo é
+demorado. Se a ingestão já foi feita, retome de `transformacao` para não baixar tudo de novo.
+
+**Log.** Cada execução escreve na tela e em `pipeline.log` (ignorado pelo Git), com hora, nível e
+módulo. `INFO` registra o andamento, `WARNING` o que é estranho mas seguiu (ex.: valores fora da
+faixa removidos) e `ERROR` uma etapa que falhou; nesse caso o pipeline para, com o erro completo
+no log.
+
+**Etapas sem função ainda.** `carga` e `modelagem` aparecem como "puladas" no log: são as próximas
+etapas do pipeline.
 
 ## Estrutura de `src/`
 
 | Arquivo | Papel |
 |---|---|
+| `config.py` | Caminhos, parâmetros (ano, recorte, URL) e configuração do log. Não importa nenhum outro módulo do projeto |
+| `pipeline.py` | Ponto de entrada: roda as etapas em ordem, ou a partir de uma delas |
 | `ingerir_*.py` | Bronze: baixa a fonte crua e registra proveniência |
 | `explorar.py` | Perfilamento das fontes |
 | `limpeza.py` | Funções de limpeza genéricas (não mencionam nenhuma fonte) |
 | `transformar_*.py` | Prata: decisões específicas de cada fonte |
 | `enriquecer.py` | Prata: junção do IDEB com o Censo e atributos que só existem depois dela |
 | `validar_prata.py` | Asserts sobre a prata, por fonte e entre fontes |
+
+Quem importa quem: `pipeline` chama as etapas; as etapas usam `limpeza` e `config`; `limpeza`
+não conhece nenhuma etapa; `config` não importa ninguém. A seta nunca volta.
 
 ## Decisões de tratamento (camada prata)
 

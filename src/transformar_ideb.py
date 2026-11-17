@@ -3,17 +3,20 @@ Camada prata do IDEB (Base dos Dados: br_inep_ideb.escola).
 
     python src/transformar_ideb.py
 """
-from pathlib import Path
+import logging
 
 import pandas as pd
 
+import config
 import limpeza
 
-BRONZE = Path("dados/bronze/ideb_escolas")
-PRATA = Path("dados/prata")
+log = logging.getLogger(__name__)
 
-ANO = 2025
-ANOS_ESCOLARES = "iniciais (1-5)"
+BRONZE = config.BRONZE_IDEB
+PRATA = config.PRATA
+
+ANO = config.ANO
+ANOS_ESCOLARES = config.ANOS_ESCOLARES
 
 CHAVE = ["id_escola"]
 
@@ -37,56 +40,63 @@ COLUNAS_EXTREMOS = ["ideb", "taxa_aprovacao"]
 
 CATEGORIAS_REDE = ["federal", "estadual", "municipal"]
 
-def carregar():                                                         #carrega o csv mais recente da pasta
+
+def carregar():
+    """Carrega o CSV mais recente da pasta."""
     pasta = limpeza.mais_recente(BRONZE)
     arquivos = sorted(pasta.glob("*.csv"))
     if not arquivos:
         raise FileNotFoundError(f"nenhum CSV em {pasta}")
     caminho = arquivos[-1]
     df = pd.read_csv(caminho, dtype=COLUNAS_TEXTO_ID, low_memory=False)
-    print("lido:", caminho, df.shape)
-    print(df.columns.tolist())
-    print(df.isna().sum())
+    log.info("lido: %s %s", caminho, df.shape)
+    log.debug("colunas: %s", df.columns.tolist())
+    log.debug("ausentes por coluna:\n%s", df.isna().sum().to_string())
     return df, caminho
 
 
-def filtrar_recorte(df):                                               #Filtrando a base para só conter o ano 2025 e os anos iniciais
+def filtrar_recorte(df):
+    """Filtra a base para so conter o ano e os anos escolares da pergunta."""
     antes = len(df)
     mascara = (df["ano"] == ANO) & (df["anos_escolares"] == ANOS_ESCOLARES)
     if not mascara.any():
-        print("valores de anos_escolares:", df["anos_escolares"].unique())
+        log.error("valores de anos_escolares: %s", df["anos_escolares"].unique())
         raise ValueError("o recorte nao casou com nenhuma linha")
-    print(f"recorte ano={ANO}, anos_escolares='{ANOS_ESCOLARES}': "
-          f"{mascara.sum()} de {antes} linhas")
+    log.info("recorte ano=%s, anos_escolares='%s': %d de %d linhas",
+             ANO, ANOS_ESCOLARES, mascara.sum(), antes)
     return df[mascara].copy(), antes - int(mascara.sum())
 
 
-def converter_tipos(df):                                               #Garante que numeros sejam numeros e conta quantos valores
-    total_novos_ausentes = 0                                           #perderam o conteudo na conversão
+def converter_tipos(df):
+    """Garante que numeros sejam numeros e conta quantos valores perderam o
+    conteudo na conversao."""
+    total_novos_ausentes = 0
     for coluna in NUMERICAS:
         if coluna not in df.columns:
-            print("aviso: coluna ausente:", coluna)
+            log.warning("coluna ausente: %s", coluna)
             continue
         antes = df[coluna].isna().sum()
         df[coluna] = pd.to_numeric(df[coluna], errors="coerce")
         novos = int(df[coluna].isna().sum() - antes)
-        print(f"{coluna}: {novos} valores viraram ausentes na conversao")
+        nivel = log.warning if novos else log.info
+        nivel("%s: %d valores viraram ausentes na conversao", coluna, novos)
         total_novos_ausentes += novos
     return df, total_novos_ausentes
 
 
-def sinalizar_ausentes(df):                                            #Cria a coluna booleana ideb_disponivel: True quando a escola 
-    df["ideb_disponivel"] = df["ideb"].notna()                         #tem IDEB calculado.
-    print("escolas com IDEB:", int(df["ideb_disponivel"].sum()),
-          "| sem IDEB:", int((~df["ideb_disponivel"]).sum()))
+def sinalizar_ausentes(df):
+    """ideb_disponivel: True quando a escola tem IDEB calculado."""
+    df["ideb_disponivel"] = df["ideb"].notna()
+    log.info("escolas com IDEB: %d | sem IDEB: %d",
+             int(df["ideb_disponivel"].sum()), int((~df["ideb_disponivel"]).sum()))
     return df
 
 
-def salvar(df):                                                        #cria o parquet e salva na prata
+def salvar(df):
     PRATA.mkdir(parents=True, exist_ok=True)
     destino = PRATA / "ideb_escolas.parquet"
     df.to_parquet(destino, index=False)
-    print("salvo em:", destino, df.shape)
+    log.info("salvo em: %s %s", destino, df.shape)
     return destino
 
 
@@ -135,4 +145,5 @@ def main():
 
 
 if __name__ == "__main__":
+    config.configurar_log()
     main()

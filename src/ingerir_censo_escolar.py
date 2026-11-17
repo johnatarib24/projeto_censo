@@ -1,7 +1,10 @@
 """
+Bronze do Censo Escolar 2025 (microdados do INEP).
+
     python src/ingerir_censo_escolar.py
 """
 import json
+import logging
 import os
 import shutil
 import subprocess
@@ -9,12 +12,16 @@ import zipfile
 from datetime import date, datetime
 from pathlib import Path
 
-URL = "https://download.inep.gov.br/dados_abertos/microdados_censo_escolar_2025_.zip"
-BRONZE = Path("dados/bronze/microdados_censo_escolar")
+import config
+
+log = logging.getLogger(__name__)
+
+URL = config.URL_CENSO
+BRONZE = config.BRONZE_CENSO
 
 
 def _caminho_estendido(caminho: Path) -> Path:
-
+    """No Windows, caminhos longos precisam do prefixo \\\\?\\ ."""
     if os.name == "nt":
         caminho = caminho.resolve()
         texto = str(caminho)
@@ -33,7 +40,7 @@ def baixar():
     BRONZE.mkdir(parents=True, exist_ok=True)
     destino_zip = BRONZE / "_download_temp.zip"
 
-    print("Baixando Microdados do Censo Escolar (via curl, pode demorar bastante)...")
+    log.info("baixando Microdados do Censo Escolar (via curl, pode demorar bastante)")
     subprocess.run(
         [
             "curl", "-sS", "-L", "--fail",
@@ -48,7 +55,7 @@ def baixar():
         check=True,
     )
 
-    print("baixado em:", destino_zip)
+    log.info("baixado em: %s", destino_zip)
     return destino_zip
 
 
@@ -62,7 +69,7 @@ def extrair(zip_path):
         z.extractall(_caminho_estendido(pasta_destino))
 
     zip_path.unlink()
-    print("extraidos:", len(arquivos), "arquivo(s) em", pasta_destino)
+    log.info("extraidos: %d arquivo(s) em %s", len(arquivos), pasta_destino)
     return pasta_destino, arquivos
 
 
@@ -74,12 +81,10 @@ def registrar(pasta_destino, arquivos):
         "arquivos": arquivos,
         "extraido_em": datetime.now().isoformat(),
     }
-
     caminho = BRONZE / "proveniencia.jsonl"
     with caminho.open("a", encoding="utf-8") as arquivo:
         arquivo.write(json.dumps(info, ensure_ascii=False) + "\n")
-
-    print("proveniencia registrada em:", caminho)
+    log.info("proveniencia registrada em: %s", caminho)
 
 
 def main():
@@ -89,4 +94,5 @@ def main():
 
 
 if __name__ == "__main__":
+    config.configurar_log()
     main()
