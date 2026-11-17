@@ -64,7 +64,7 @@ pip install -r requirements.txt
 # pipeline inteiro (de qualquer pasta)
 python src/pipeline.py
 
-# a partir de uma etapa: ingestao, transformacao, enriquecimento
+# a partir de uma etapa: ingestao, transformacao, enriquecimento, carga
 python src/pipeline.py transformacao
 
 # conferência da prata (sai com erro se algum invariante falhar)
@@ -85,8 +85,9 @@ módulo. `INFO` registra o andamento, `WARNING` o que é estranho mas seguiu (ex
 faixa removidos) e `ERROR` uma etapa que falhou; nesse caso o pipeline para, com o erro completo
 no log.
 
-**Etapas sem função ainda.** `carga` e `modelagem` aparecem como "puladas" no log: são as próximas
-etapas do pipeline.
+**Etapa sem função ainda.** `modelagem` aparece como "pulada" no log: é a próxima etapa do
+pipeline. A `carga` grava o banco `dados/ouro/projeto.duckdb`; feche qualquer outro programa que o
+tenha aberto antes de rodá-la, porque o DuckDB trava o arquivo.
 
 ## Estrutura de `src/`
 
@@ -99,6 +100,7 @@ etapas do pipeline.
 | `limpeza.py` | Funções de limpeza genéricas (não mencionam nenhuma fonte) |
 | `transformar_*.py` | Prata: decisões específicas de cada fonte |
 | `enriquecer.py` | Prata: junção do IDEB com o Censo e atributos que só existem depois dela |
+| `carga.py` | Carrega a prata no DuckDB e constrói a Ouro em SQL (dimensão, fato e views), com conferências |
 | `validar_prata.py` | Asserts sobre a prata, por fonte e entre fontes |
 
 Quem importa quem: `pipeline` chama as etapas; as etapas usam `limpeza` e `config`; `limpeza`
@@ -219,6 +221,81 @@ Ver "Atributos que só existem depois da junção".
   dicionário do INEP (sem ordem natural). `rede` (IDEB): federal, estadual, municipal.
   Os filtros usam o rótulo (`TP_DEPENDENCIA == "municipal"`), não o código.
 - `IN_*`: Int8 (0/1 com ausente). Códigos de identificação: texto.
+
+## Modelagem e carga (camada Ouro)
+
+A prata em Parquet entra como está no banco DuckDB (`dados/ouro/projeto.duckdb`, um arquivo só), e a
+Ouro é construída dentro dele, em SQL, a partir da prata. As camadas deixam de ser pastas e viram
+esquemas: `prata.*` (as três tabelas da prata) e `ouro.*`.
+
+### As três decisões da modelagem
+
+| Pergunta | Resposta |
+|---|---|
+| Quais tabelas? | `ouro.dim_escola` e `ouro.fato_escola`, mais duas views: `vw_escola_completa` e `vw_uf_municipal` |
+| Qual o grão de cada uma? | Fato: uma escola em um ano. Dimensão: uma escola do IDEB 2025 |
+| Como se ligam? | `fato_escola.escola_id` aponta para `dim_escola.escola_id` |
+
+**Grão da fato.** Uma linha de `fato_escola` é uma escola em um ano (2025). Dessa frase decorre:
+- **Chave primária:** o par `escola_id` + `ano`, e não a escola sozinha.
+- **O que pode ser agregado:** a média de escolas de uma mesma UF, no mesmo ano. Juntar anos
+  diferentes da mesma escola numa média não responderia à pergunta.
+- **O que é duplicata:** a mesma escola no mesmo ano duas vezes, e nada além disso.
+
+O `ano` está na fato mesmo havendo só 2025, porque as edições anteriores do IDEB já estão na bronze:
+se um dia entrarem, o modelo não muda.
+
+### Esquema estrela
+
+```
+                 dim_escola
+                 escola_id (chave)
+                 municipio_id, uf, rede,
+                 localizacao, situacao_funcionamento
+                      ^
+                      | escola_id
+                 fato_escola
+                 escola_id + ano (chave)
+                 ideb, taxa_aprovacao, indicador_rendimento,
+                 notas do SAEB, indice_infraestrutura,
+                 infra_basica, infra_espacos_ensino,
+                 infra_acessibilidade, infra_tecnologia,
+                 ideb_dif_mediana_uf, infra_dif_mediana_uf,
+                 ideb_disponivel, na_analise
+```
+
+A dimensão guarda as palavras pelas quais se agrupa ou filtra (UF, rede, localização, situação). A
+fato guarda os números. A fato nasce de `prata.ideb_censo_enriquecido` com o filtro de integridade
+`WHERE id_escola IS NOT NULL`, que mantém as 66.138 escolas.
+
+### Tabelas e views da Ouro
+
+| Objeto | Tipo | Linhas | O que é |
+|---|---|---|---|
+| `ouro.dim_escola` | tabela | 66.138 | Uma linha por escola do IDEB 2025 |
+| `ouro.fato_escola` | tabela | 66.138 | Medidas de cada escola em 2025 |
+| `ouro.vw_escola_completa` | view | 66.138 | A tabela achatada, recriada da estrela (fato com dimensão) |
+| `ouro.vw_uf_municipal` | view | 26 | Resposta da pergunta: média de IDEB e de infraestrutura (geral e por bloco) por UF, só escolas de `na_analise` |
+
+A `vw_uf_municipal` usa **média simples** das escolas de cada UF (36.731 escolas no total).
+
+### Decisões
+
+- **Escopo da Ouro.** Só as escolas do IDEB 2025 entram. As 150.819 escolas do Censo que não têm
+  IDEB ficam na prata: a pergunta parte do IDEB.
+- **Escolas sem par no Censo (2.765).** Ficam na dimensão e na fato, com índices de infraestrutura,
+  localização e situação ausentes. Nenhuma tem IDEB calculado, então nenhuma entra em `na_analise`.
+- **Nomes de negócio.** A Ouro troca os nomes técnicos das fontes (`id_escola`, `sigla_uf`,
+  `TP_LOCALIZACAO`) por nomes que uma pessoa entende (`escola_id`, `uf`, `localizacao`).
+- **Views, não arquivos.** A tabela achatada e a tabela por UF são consultas salvas: nada para
+  manter à mão, e corrigir um atributo da dimensão corrige as duas.
+
+### Conferências (`carga.conferir`)
+
+Cada uma precisa devolver zero, e a carga para com erro se alguma falhar: pares (escola, ano)
+repetidos na fato; fato sem dimensão (órfãos); escolas repetidas na dimensão; diferença de linhas
+entre a fato e a prata; diferença de linhas entre a view completa e a fato; UFs em
+`vw_uf_municipal` diferentes de 26; DF presente em `vw_uf_municipal`.
 
 ## Decisões para a integração (próxima etapa)
 
