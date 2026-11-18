@@ -16,6 +16,7 @@ BRONZE = DADOS / "bronze"
 PRATA = DADOS / "prata"
 OURO = DADOS / "ouro"
 RELATORIOS = RAIZ / "relatorios"
+DBT_PROJETO = RAIZ / "ecox14"
 ARQUIVO_LOG = RAIZ / "pipeline.log"
 BANCO = OURO / "projeto.duckdb"
 

@@ -3,8 +3,9 @@ Carga em banco (DuckDB) e camada Ouro.
 
     python src/carga.py
 
-Le os Parquet da prata para o esquema `prata` e constroi, em SQL, o esquema
-`ouro`: a dimensao, a fato e duas views. O banco inteiro e o arquivo
+Le os Parquet da prata para o esquema `prata`. A construcao da Ouro (dimensao,
+fato e views) agora e do dbt (pasta ecox14/, etapa `modelagem` do pipeline);
+`conferir_ouro` roda depois dele. O banco inteiro e o arquivo
 dados/ouro/projeto.duckdb (apagar o arquivo e uma forma legitima de recomecar).
 """
 import logging
@@ -49,7 +50,8 @@ def carregar_prata(con):
 
 
 def construir_ouro(con):
-    """A ouro nasce dentro do banco, a partir da prata, e fala a lingua do negocio."""
+    """APOSENTADA (aula 10): hoje quem constroi a Ouro e o dbt, em ecox14/models.
+    Mantida so para comparar os dois resultados; o pipeline nao a chama."""
     # dimensao: uma linha por escola do IDEB 2025
     con.execute("""
         CREATE OR REPLACE TABLE ouro.dim_escola AS
@@ -153,13 +155,20 @@ def conferir(con):
         raise RuntimeError(f"{len(falhas)} conferencia(s) da ouro falharam: {falhas}")
 
 
+def conferir_ouro():
+    """Abre o banco e confere a Ouro (depois que o dbt a construiu)."""
+    con = conectar()
+    try:
+        conferir(con)
+    finally:
+        con.close()
+
+
 def main():
     con = conectar()
     try:
         criar_esquemas(con)
         carregar_prata(con)
-        construir_ouro(con)
-        conferir(con)
     finally:
         con.close()
 

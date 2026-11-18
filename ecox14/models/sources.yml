@@ -1,0 +1,9 @@
+version: 2
+
+sources:
+  - name: prata
+    schema: prata
+    tables:
+      - name: ideb_escolas
+      - name: censo_escolas
+      - name: ideb_censo_enriquecido

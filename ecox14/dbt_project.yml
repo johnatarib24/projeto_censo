@@ -1,0 +1,17 @@
+name: 'ecox14'
+version: '1.0.0'
+profile: 'ecox14'
+
+model-paths: ["models"]
+analysis-paths: ["analyses"]
+macro-paths: ["macros"]
+seed-paths: ["seeds"]
+
+clean-targets: ["target", "dbt_packages"]
+
+flags:
+  send_anonymous_usage_stats: false
+
+models:
+  ecox14:
+    +materialized: table

@@ -7,3 +7,7 @@ __pycache__/
 relatorios/
 pipeline.log
 !dados/prata/proveniencia.jsonl
+ecox14/target/
+ecox14/logs/
+ecox14/dbt_packages/
+ecox14/dev.duckdb
