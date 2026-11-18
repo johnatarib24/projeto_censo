@@ -64,7 +64,7 @@ pip install -r requirements.txt
 # pipeline inteiro (de qualquer pasta)
 python src/pipeline.py
 
-# a partir de uma etapa: ingestao, transformacao, enriquecimento, carga
+# a partir de uma etapa: ingestao, transformacao, enriquecimento, carga, modelagem
 python src/pipeline.py transformacao
 
 # conferência da prata (sai com erro se algum invariante falhar)
@@ -85,9 +85,9 @@ módulo. `INFO` registra o andamento, `WARNING` o que é estranho mas seguiu (ex
 faixa removidos) e `ERROR` uma etapa que falhou; nesse caso o pipeline para, com o erro completo
 no log.
 
-**Etapa sem função ainda.** `modelagem` aparece como "pulada" no log: é a próxima etapa do
-pipeline. A `carga` grava o banco `dados/ouro/projeto.duckdb`; feche qualquer outro programa que o
-tenha aberto antes de rodá-la, porque o DuckDB trava o arquivo.
+**Banco.** A `carga` e a `modelagem` gravam em `dados/ouro/projeto.duckdb`; feche qualquer outro
+programa que o tenha aberto antes de rodá-las, porque o DuckDB trava o arquivo. A `modelagem` roda o
+dbt (`ecox14/`) e, se ele falhar, o pipeline para com o erro no log.
 
 ## Estrutura de `src/`
 
@@ -100,7 +100,7 @@ tenha aberto antes de rodá-la, porque o DuckDB trava o arquivo.
 | `limpeza.py` | Funções de limpeza genéricas (não mencionam nenhuma fonte) |
 | `transformar_*.py` | Prata: decisões específicas de cada fonte |
 | `enriquecer.py` | Prata: junção do IDEB com o Censo e atributos que só existem depois dela |
-| `carga.py` | Carrega a prata no DuckDB e constrói a Ouro em SQL (dimensão, fato e views), com conferências |
+| `carga.py` | Carrega a prata no DuckDB e confere a Ouro depois que o dbt a constrói. A `construir_ouro` antiga, em Python, foi aposentada e fica só para comparação |
 | `validar_prata.py` | Asserts sobre a prata, por fonte e entre fontes |
 
 Quem importa quem: `pipeline` chama as etapas; as etapas usam `limpeza` e `config`; `limpeza`
@@ -225,7 +225,7 @@ Ver "Atributos que só existem depois da junção".
 ## Modelagem e carga (camada Ouro)
 
 A prata em Parquet entra como está no banco DuckDB (`dados/ouro/projeto.duckdb`, um arquivo só), e a
-Ouro é construída dentro dele, em SQL, a partir da prata. As camadas deixam de ser pastas e viram
+Ouro é construída dentro dele, a partir da prata, pelo dbt (ver "Transformação declarativa com dbt"). As camadas deixam de ser pastas e viram
 esquemas: `prata.*` (as três tabelas da prata) e `ouro.*`.
 
 ### As três decisões da modelagem
@@ -292,10 +292,57 @@ A `vw_uf_municipal` usa **média simples** das escolas de cada UF (36.731 escola
 
 ### Conferências (`carga.conferir`)
 
-Cada uma precisa devolver zero, e a carga para com erro se alguma falhar: pares (escola, ano)
+Rodam logo depois do `dbt run`, na etapa `modelagem`. Cada uma precisa devolver zero, e o pipeline para com erro se alguma falhar: pares (escola, ano)
 repetidos na fato; fato sem dimensão (órfãos); escolas repetidas na dimensão; diferença de linhas
 entre a fato e a prata; diferença de linhas entre a view completa e a fato; UFs em
 `vw_uf_municipal` diferentes de 26; DF presente em `vw_uf_municipal`.
+
+## Transformação declarativa com dbt
+
+A construção da Ouro saiu do Python e virou modelos do dbt (dbt Core com o adaptador `dbt-duckdb`),
+na pasta `ecox14/`. O Python continua ingerindo, lendo Parquet e abrindo o banco; o dbt só entra
+onde há `SELECT`: ele escreve o `CREATE`, descobre a ordem e entrega o SQL ao DuckDB, que executa.
+
+```
+ecox14/
+  dbt_project.yml        nome, pastas e materialização padrão (table)
+  profiles.yml           como conectar no banco
+  models/
+    sources.yml          as 3 tabelas da prata, como origem
+    dim_escola.sql       tabela
+    fato_escola.sql      tabela
+    vw_escola_completa.sql   view
+    vw_uf_municipal.sql      view
+```
+
+| Modelo | Materialização | Depende de |
+|---|---|---|
+| `dim_escola` | tabela | `source('prata', 'ideb_censo_enriquecido')` |
+| `fato_escola` | tabela | `source('prata', 'ideb_censo_enriquecido')` |
+| `vw_escola_completa` | view | `ref('fato_escola')`, `ref('dim_escola')` |
+| `vw_uf_municipal` | view | `ref('vw_escola_completa')` |
+
+A ordem de execução vem dos `ref`, e nunca é escrita à mão: prata → dimensão e fato → view completa →
+view por UF. Os modelos são os mesmos `SELECT` que a `construir_ouro` tinha dentro de strings em
+Python, só que agora em arquivos `.sql`.
+
+**Perfil dentro do projeto.** O `profiles.yml` fica em `ecox14/` (o dbt procura primeiro na pasta
+atual) e o caminho do banco vem da variável de ambiente `DBT_DUCKDB_PATH`, que o pipeline preenche
+com `config.BANCO`. Assim não há caminho do computador de ninguém no repositório. Rodando o dbt na
+mão, vale o padrão relativo `../dados/ouro/projeto.duckdb`.
+
+```bash
+cd ecox14
+dbt run                          # os 4 modelos
+dbt run --select dim_escola+     # a dimensão e tudo que depende dela
+```
+
+O SQL que o dbt de fato envia ao banco fica em `ecox14/target/run/ecox14/models/` (pasta ignorada
+pelo Git).
+
+**Migração sem mudar o resultado.** Os números da Ouro são os mesmos de antes: 66.138 linhas na
+dimensão, na fato e na view completa, e 26 UFs na view por UF. A `construir_ouro` foi mantida em
+`carga.py`, sem ser chamada, para poder comparar as duas formas.
 
 ## Decisões para a integração (próxima etapa)
 
